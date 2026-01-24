@@ -46,32 +46,10 @@ The system uses LangMem to persist investigation findings:
 Memory tools used:
   create_search_memory_tool
   create_manage_memory_tool
-
-**Architecture Diagram**
-  User Prompt
-      |
-      v
-  ┌───────────────────────┐
-  │ Router / Orchestrator │
-  └──────────┬────────────┘
-             │
-   ┌─────────┴─────────┐
-   │                   │
-  ▼                   ▼
-  Hypothesis Agent   Memory (LangMem)
-  │                   ▲
-  │                   │
-  ├── Sales Agent ─────┤
-  │                   │
-  ├── Inventory Agent ─┤
-  │                   │
-  └── Validation Agent ┘
-             |
-             v
-     RCA Report + Trace
      
 **Why This Architecture Works**
   Loose coupling between agents
   Centralized memory, not centralized logic
   Evidence-driven convergence, not rule-based flows
   Explainability by design
+
