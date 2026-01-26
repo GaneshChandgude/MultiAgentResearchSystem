@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rca-app"
+version = "0.1.0"
+description = "Autonomous RCA agent for retail operations"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "langchain",
+  "langchain-core",
+  "langchain-community",
+  "langchain-openai",
+  "langchain-groq",
+  "langgraph",
+  "langmem",
+  "pandas",
+  "pydantic",
+  "requests",
+]
+
+[project.scripts]
+rca-app = "rca_app.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,674 @@
+from __future__ import annotations
+
+from typing import Any, Dict, List
+
+from langchain.agents import create_agent
+from langchain.agents.middleware import TodoListMiddleware
+from langchain_core.messages import AIMessage, ToolMessage
+from langchain.tools import tool
+from langmem import create_manage_memory_tool, create_search_memory_tool
+
+from .config import AppConfig
+from .llm import get_llm_model
+from .memory import build_memory_augmented_prompt, append_rca_history
+from .tools_inventory import build_inventory_tools
+from .tools_sales import build_sales_tools
+from .types import RCAState
+from .utils import filter_tool_messages, handle_tool_errors, process_response, serialize_messages
+
+
+def build_hypothesis_tool(config: AppConfig, store, checkpointer, llm):
+    hypothesis_react_agent = create_agent(
+        model=llm,
+        tools=[
+            create_manage_memory_tool(namespace=("hypothesis", "{user_id}")),
+            create_search_memory_tool(namespace=("hypothesis", "{user_id}")),
+        ],
+        middleware=[handle_tool_errors],
+        store=store,
+        checkpointer=checkpointer,
+    )
+
+    @tool
+    def hypothesis_agent_tool(task: str, user_id: str, query_id: str, memory_context: str) -> Dict[str, Any]:
+        messages = [
+            {
+                "role": "system",
+                "content": f"""
+You are an RCA hypothesis-generation expert.
+
+Context (do not repeat, only use for reasoning):
+{memory_context}
+
+Your task:
+Given the user input, generate possible root-cause hypotheses.
+
+STRICT OUTPUT RULES:
+1. Output **only valid JSON**.
+2. Root JSON object must have exactly two fields:
+   - "hypotheses": an array of **plain strings**.
+   - "reasoning": a string explaining how the hypotheses were generated.
+3. No markdown or code fences.
+4. No extra commentary or fields.
+
+JSON schema:
+{{
+  "hypotheses": ["...", "..."],
+  "reasoning": "..."
+}}
+""",
+            },
+            {"role": "user", "content": task},
+        ]
+
+        tool_config = {"configurable": {"user_id": user_id, "thread_id": query_id}}
+
+        result = hypothesis_react_agent.invoke({"messages": messages}, tool_config)
+        final_msg = result["messages"][-1].content
+        output = process_response(final_msg, llm=llm)
+
+        hypotheses: List[str] = output.get("hypotheses", [])
+
+        internal_msgs = result["messages"][2:-1]
+        tool_call_msgs = filter_tool_messages(internal_msgs)
+
+        trace_entry = {
+            "agent": "HypothesisAgent",
+            "step": "Generated hypotheses",
+            "calls": serialize_messages(tool_call_msgs),
+            "hypotheses": hypotheses,
+        }
+
+        return {"hypotheses": hypotheses, "trace": [trace_entry]}
+
+    return hypothesis_agent_tool
+
+
+def build_sales_analysis_tool(config: AppConfig, store, checkpointer, llm):
+    sales_tools = build_sales_tools(config)
+    sales_tools += [
+        create_manage_memory_tool(namespace=("sales", "{user_id}")),
+        create_search_memory_tool(namespace=("sales", "{user_id}")),
+    ]
+
+    sales_react_agent = create_agent(
+        model=llm,
+        tools=sales_tools,
+        middleware=[handle_tool_errors],
+        store=store,
+        checkpointer=checkpointer,
+    )
+
+    @tool
+    def sales_analysis_agent_tool(
+        task: str,
+        hypotheses: List[str],
+        user_id: str,
+        query_id: str,
+        memory_context: str,
+    ) -> Dict[str, Any]:
+        sales_related_hypotheses = [
+            h
+            for h in hypotheses
+            if any(
+                k in h.lower()
+                for k in ["sales", "demand", "promotion", "spike", "forecast", "underestimated"]
+            )
+        ]
+        if not sales_related_hypotheses:
+            sales_related_hypotheses = hypotheses
+
+        messages = [
+            {
+                "role": "system",
+                "content": f"""
+You are a Sales Analysis Agent for RCA.
+
+Context (do not repeat, only use for reasoning):
+{memory_context}
+
+Your responsibilities:
+- Use available tools to analyze sales patterns
+- Validate or refute sales-related hypotheses
+
+STRICT OUTPUT RULES:
+1. Output ONLY valid JSON
+2. Root JSON object MUST contain EXACTLY ONE key: "sales_insights"
+3. NO extra keys, commentary, or markdown
+
+JSON schema:
+{{
+  "sales_insights": {{...}}
+}}
+""",
+            },
+            {
+                "role": "user",
+                "content": f"""
+Task: {task}
+Hypotheses: {sales_related_hypotheses}
+""",
+            },
+        ]
+
+        tool_config = {"configurable": {"user_id": user_id, "thread_id": query_id}}
+        result = sales_react_agent.invoke({"messages": messages}, tool_config)
+        final_msg = result["messages"][-1].content
+        output = process_response(final_msg, llm=llm)
+        sales_insights = output.get("sales_insights")
+
+        internal_msgs = result["messages"][2:-1]
+        tool_call_msgs = filter_tool_messages(internal_msgs)
+
+        trace_entry = {
+            "agent": "SalesAnalysisAgent",
+            "step": "Validated sales hypotheses",
+            "calls": serialize_messages(tool_call_msgs),
+            "sales_insights": sales_insights,
+        }
+
+        return {"sales_insights": sales_insights, "trace": [trace_entry]}
+
+    return sales_analysis_agent_tool, sales_tools
+
+
+def build_inventory_analysis_tool(config: AppConfig, store, checkpointer, llm, promo_tool):
+    inventory_tools = [promo_tool] + build_inventory_tools(config)
+    inventory_tools += [
+        create_manage_memory_tool(namespace=("inventory", "{user_id}")),
+        create_search_memory_tool(namespace=("inventory", "{user_id}")),
+    ]
+
+    inventory_react_agent = create_agent(
+        model=llm,
+        tools=inventory_tools,
+        middleware=[handle_tool_errors],
+        store=store,
+        checkpointer=checkpointer,
+    )
+
+    @tool
+    def inventory_analysis_agent_tool(
+        task: str,
+        hypotheses: List[str],
+        user_id: str,
+        query_id: str,
+        memory_context: str,
+    ) -> Dict[str, Any]:
+        inventory_related_hypotheses = [
+            h
+            for h in hypotheses
+            if any(
+                k in h.lower()
+                for k in [
+                    "inventory",
+                    "stock",
+                    "supply",
+                    "replenish",
+                    "transfer",
+                    "shrink",
+                    "adjust",
+                    "warehouse",
+                ]
+            )
+        ]
+        if not inventory_related_hypotheses:
+            inventory_related_hypotheses = hypotheses
+
+        messages = [
+            {
+                "role": "system",
+                "content": f"""
+You are the Inventory RCA Agent.
+
+Context (do not repeat, only use for reasoning):
+{memory_context}
+
+Your responsibilities:
+- Analyze inventory levels, movements, transfers, adjustments, and replenishments
+- Use available tools via a ReAct loop
+- Produce structured insights
+
+STRICT OUTPUT RULES:
+1. Output ONLY valid JSON
+2. Root JSON object MUST contain EXACTLY ONE key: "inventory_insights"
+3. NO extra keys, markdown, or commentary
+
+JSON schema:
+{{
+  "inventory_insights": {{...}}
+}}
+""",
+            },
+            {
+                "role": "user",
+                "content": f"""
+Task: {task}
+Hypotheses to validate: {inventory_related_hypotheses}
+""",
+            },
+        ]
+
+        tool_config = {"configurable": {"user_id": user_id, "thread_id": query_id}}
+        result = inventory_react_agent.invoke({"messages": messages}, tool_config)
+        final_msg = result["messages"][-1].content
+        output = process_response(final_msg, llm=llm)
+        inventory_insights = output.get("inventory_insights")
+
+        internal_msgs = result["messages"][2:-1]
+        tool_call_msgs = filter_tool_messages(internal_msgs)
+
+        trace_entry = {
+            "agent": "InventoryAnalysisAgent",
+            "step": "Validated inventory hypotheses",
+            "calls": serialize_messages(tool_call_msgs),
+            "inventory_insights": inventory_insights,
+        }
+
+        return {"inventory_insights": inventory_insights, "trace": [trace_entry]}
+
+    return inventory_analysis_agent_tool
+
+
+def build_validation_tool(config: AppConfig, store, checkpointer, llm):
+    validation_react_agent = create_agent(
+        model=llm,
+        tools=[
+            create_manage_memory_tool(namespace=("hypothesis_validation", "{user_id}")),
+            create_search_memory_tool(namespace=("hypothesis_validation", "{user_id}")),
+        ],
+        middleware=[handle_tool_errors],
+        store=store,
+        checkpointer=checkpointer,
+    )
+
+    @tool
+    def hypothesis_validation_agent_tool(
+        hypotheses: List[str],
+        sales_insights: Dict[str, Any],
+        inventory_insights: Dict[str, Any],
+        user_id: str,
+        query_id: str,
+    ) -> Dict[str, Any]:
+        messages = [
+            {
+                "role": "system",
+                "content": """
+Validate each hypothesis using sales and inventory insights.
+
+STRICT OUTPUT RULES:
+1. Output ONLY valid JSON
+2. No markdown or code fences
+3. No extra fields or commentary
+
+JSON schema:
+{
+  "validated": { "hypothesis": true | false },
+  "reasoning": { "hypothesis": "explanation" }
+}
+""",
+            },
+            {
+                "role": "user",
+                "content": f"""
+Hypotheses:
+{hypotheses}
+
+Sales insights:
+{sales_insights}
+
+Inventory insights:
+{inventory_insights}
+""",
+            },
+        ]
+
+        tool_config = {"configurable": {"user_id": user_id, "thread_id": query_id}}
+        result = validation_react_agent.invoke({"messages": messages}, tool_config)
+        final_msg = result["messages"][-1].content
+        resp = process_response(final_msg, llm=llm)
+
+        internal_msgs = result["messages"][2:-1]
+        tool_call_msgs = filter_tool_messages(internal_msgs)
+
+        trace_entry = {
+            "agent": "HypothesisValidationAgent",
+            "step": "Validated hypotheses",
+            "calls": serialize_messages(tool_call_msgs),
+            "details": resp,
+        }
+
+        return {"validated": resp.get("validated"), "reasoning": resp.get("reasoning"), "trace": [trace_entry]}
+
+    return hypothesis_validation_agent_tool
+
+
+def build_root_cause_tool(config: AppConfig, store, checkpointer, llm):
+    root_cause_react_agent = create_agent(
+        model=llm,
+        tools=[],
+        middleware=[handle_tool_errors],
+        store=store,
+        checkpointer=checkpointer,
+    )
+
+    @tool
+    def root_cause_analysis_agent_tool(
+        validated_hypotheses: Dict[str, bool],
+        sales_insights: Dict[str, Any],
+        inventory_insights: Dict[str, Any],
+        trace: List[Dict[str, Any]],
+        user_id: str,
+        query_id: str,
+    ) -> Dict[str, Any]:
+        messages = [
+            {
+                "role": "system",
+                "content": """
+Produce a final Root Cause Analysis.
+
+Include:
+- primary root causes
+- supporting evidence
+- contributing factors
+- timeline
+- recommendations
+
+STRICT OUTPUT RULES:
+1. Output ONLY valid JSON
+2. No markdown or code fences
+3. No extra commentary
+4. JSON MUST contain EXACTLY two top-level keys:
+   - "root_cause"
+   - "reasoning"
+
+JSON schema:
+{
+  "root_cause": {
+    "primary_root_causes": ["string"],
+    "supporting_evidence": {
+      "sales": {},
+      "inventory": {},
+      "cross_analysis": {}
+    },
+    "contributing_factors": ["string"],
+    "timeline": [
+      { "date": "YYYY-MM-DD", "event": "string" }
+    ],
+    "recommendations": ["string"]
+  },
+  "reasoning": {
+    "primary_root_causes": "explanation",
+    "contributing_factors": "explanation",
+    "supporting_evidence": "explanation",
+    "timeline": "explanation",
+    "recommendations": "explanation"
+  }
+}
+""",
+            },
+            {
+                "role": "user",
+                "content": f"""
+Validated hypotheses:
+{validated_hypotheses}
+
+Sales insights:
+{sales_insights}
+
+Inventory insights:
+{inventory_insights}
+
+Prior trace:
+{trace}
+""",
+            },
+        ]
+
+        tool_config = {"configurable": {"user_id": user_id, "thread_id": query_id}}
+        result = root_cause_react_agent.invoke({"messages": messages}, tool_config)
+        final_msg = result["messages"][-1].content
+        resp = process_response(final_msg, llm=llm)
+        root_cause = resp.get("root_cause")
+        reasoning = resp.get("reasoning")
+
+        internal_msgs = result["messages"][2:-1]
+        tool_call_msgs = filter_tool_messages(internal_msgs)
+
+        structured_trace_entry = {
+            "agent": "RootCauseAnalysisAgent",
+            "step": "Generated structured root cause",
+            "calls": serialize_messages(tool_call_msgs),
+            "root_cause": root_cause,
+        }
+
+        return {"root_cause": root_cause, "reasoning": reasoning, "trace": [structured_trace_entry]}
+
+    return root_cause_analysis_agent_tool
+
+
+def build_report_tool(config: AppConfig, store, checkpointer, llm):
+    rca_report_agent = create_agent(
+        model=llm,
+        tools=[],
+        middleware=[handle_tool_errors],
+        store=store,
+        checkpointer=checkpointer,
+    )
+
+    @tool
+    def rca_report_agent_tool(
+        root_cause: str, reasoning: str, user_id: str, query_id: str
+    ) -> Dict[str, Any]:
+        report_messages = [
+            {
+                "role": "system",
+                "content": """
+You are an expert supply chain and demand planning analyst.
+
+Create a professional Root Cause Analysis Report.
+
+Audience:
+- Demand Planning
+- Inventory Management
+- Supply Chain Teams
+
+Requirements:
+- Clear structured sections
+- Bullet points where appropriate
+- No JSON, no code
+- Pure narrative report
+
+The report MUST include:
+- Executive Summary
+- Primary Root Cause(s)
+- Supporting Evidence
+- Contributing Factors
+- Key Data Points
+- Timeline of Events
+- Recommendations
+- Final Conclusion
+
+Tone:
+Analytical, data-driven, formal, concise.
+""",
+            },
+            {
+                "role": "user",
+                "content": f"""
+Use the following structured RCA output:
+
+{root_cause}
+{reasoning}
+""",
+            },
+        ]
+
+        tool_config = {"configurable": {"user_id": user_id, "thread_id": query_id}}
+        report_text = rca_report_agent.invoke(report_messages, tool_config).content
+
+        report_trace_entry = {
+            "agent": "RootCauseAnalysisAgent",
+            "step": "Generated RCA report",
+            "report_text": report_text,
+        }
+
+        return {"report_text": report_text, "trace": [report_trace_entry]}
+
+    return rca_report_agent_tool
+
+
+def build_router_agent(config: AppConfig, store, checkpointer, llm, tools):
+    return create_agent(
+        model=llm,
+        tools=tools,
+        middleware=[handle_tool_errors, TodoListMiddleware()],
+        store=store,
+        checkpointer=checkpointer,
+    )
+
+
+def orchestration_agent(rca_state: RCAState, config: Dict[str, Any], store, router_agent):
+    if not rca_state.get("history"):
+        rca_state["history"] = []
+
+    memory_context = build_memory_augmented_prompt(
+        query=rca_state["task"],
+        state=rca_state,
+        config=config,
+        store=store,
+    )
+
+    messages = [
+        {
+            "role": "system",
+            "content": f"""
+You are a Deep Research Agent.
+
+Task: {rca_state["task"]}
+
+User Id: {config["configurable"]["user_id"]}
+
+Query Id: {config["configurable"]["thread_id"]}
+
+Use the following sementic abstract + procedural + episodic + conversation context:
+Memory Context(memory_context):'''{memory_context}'''
+
+Your role is to analyze the user's input, determine the appropriate
+research or response strategy, and use the available tools to resolve
+the request.
+
+The set of tools available to you may change dynamically.
+You must infer what each tool does from its description.
+
+------------------------------------------------------------
+CORE RESPONSIBILITIES:
+
+1. Understand User Intent
+  - The user input may be:
+    • a greeting or help request (e.g., "hi", "hello", "help")
+    • a general question
+    • a root cause analysis or supply chain investigation
+  - Do not assume the input is analytical.
+
+2. Decide the Level of Depth Required
+  - If the input can be addressed with a simple explanation or response,
+    prefer a lightweight approach.
+  - If the input requires investigation, reasoning, or analysis,
+    proceed with deep research behavior.
+
+3. Create an Internal Plan
+  - Before calling any tool, determine:
+    • what information is missing
+    • what needs to be discovered or generated
+    • whether memory or prior context is relevant
+  - The plan does not need to be shown unless required by a tool.
+
+4. Execute Using Tools
+  - Use the **todo's** tools to carry out the plan.
+  - Choose tools based on their descriptions, not their names.
+  - You may call multiple tools if necessary.
+  - Always prefer the minimal set of tool calls needed.
+
+5. RCA-Specific Behavior (when applicable)
+  - When the task involves diagnosing causes of a problem:
+    • avoid jumping to conclusions
+    • favor hypothesis generation before validation
+    • rely on state, memory, and evidence
+
+------------------------------------------------------------
+IMPORTANT RULES:
+
+- Do not hard-code assumptions about tool availability.
+- Do not invent tools or capabilities.
+- Do not answer complex questions directly in free text
+  if an appropriate tool exists.
+- Be robust to vague, short, or conversational user inputs.
+- Think first, then act through tools.
+
+You are expected to behave as a flexible, adaptive
+deep-research agent, not a fixed pipeline.
+""",
+        },
+        {"role": "user", "content": rca_state["task"]},
+    ]
+
+    tool_config = {
+        **config,
+        "configurable": {**config.get("configurable", {}), "rca_state": rca_state},
+    }
+
+    result = router_agent.invoke({"messages": messages}, tool_config)
+    final_msg = result["messages"][-1].content
+
+    internal_msgs = result["messages"][2:-1]
+    tool_call_msgs = filter_tool_messages(internal_msgs)
+
+    trace_entry = {
+        "agent": "Orchestration Agent",
+        "tool_calls": serialize_messages(tool_call_msgs),
+    }
+
+    rca_state["output"] = final_msg
+    rca_state["trace"] = trace_entry
+
+    append_rca_history(rca_state)
+
+    return rca_state
+
+
+def build_agents(config: AppConfig, store, checkpointer):
+    llm = get_llm_model(config)
+    hypothesis_tool = build_hypothesis_tool(config, store, checkpointer, llm)
+    sales_tool, sales_tools = build_sales_analysis_tool(config, store, checkpointer, llm)
+    promo_tool = next(tool for tool in sales_tools if tool.name == "get_promo_period")
+    inventory_tool = build_inventory_analysis_tool(config, store, checkpointer, llm, promo_tool)
+    validation_tool = build_validation_tool(config, store, checkpointer, llm)
+    root_cause_tool = build_root_cause_tool(config, store, checkpointer, llm)
+    report_tool = build_report_tool(config, store, checkpointer, llm)
+
+    router_tools = [
+        create_search_memory_tool(namespace=("orchestration", "{user_id}")),
+        create_manage_memory_tool(namespace=("orchestration", "{user_id}")),
+        hypothesis_tool,
+        sales_tool,
+        inventory_tool,
+        validation_tool,
+        root_cause_tool,
+        report_tool,
+    ]
+
+    router_agent = build_router_agent(config, store, checkpointer, llm, router_tools)
+
+    return {
+        "llm": llm,
+        "router_agent": router_agent,
+        "tools": {
+            "hypothesis": hypothesis_tool,
+            "sales": sales_tool,
+            "inventory": inventory_tool,
+            "validation": validation_tool,
+            "root_cause": root_cause_tool,
+            "report": report_tool,
+        },
+    }

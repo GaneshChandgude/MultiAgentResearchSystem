@@ -1,0 +1,33 @@
+from __future__ import annotations
+
+from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
+
+from .config import AppConfig
+
+
+def get_llm_model(config: AppConfig) -> AzureChatOpenAI:
+    if not (config.azure_openai_endpoint and config.azure_openai_api_key and config.azure_openai_deployment):
+        raise ValueError("Azure OpenAI endpoint, api key, and deployment must be set.")
+
+    return AzureChatOpenAI(
+        azure_endpoint=config.azure_openai_endpoint,
+        api_key=config.azure_openai_api_key,
+        api_version=config.azure_openai_api_version,
+        model=config.azure_openai_deployment,
+        azure_deployment=config.azure_openai_deployment,
+        temperature=0.7,
+        timeout=300,
+        max_retries=3,
+    )
+
+
+def get_embeddings(config: AppConfig) -> AzureOpenAIEmbeddings:
+    if not (config.embeddings_endpoint and config.embeddings_api_key):
+        raise ValueError("Azure OpenAI embeddings endpoint and api key must be set.")
+
+    return AzureOpenAIEmbeddings(
+        model=config.embeddings_model,
+        azure_endpoint=config.embeddings_endpoint,
+        api_key=config.embeddings_api_key,
+        openai_api_version=config.embeddings_api_version,
+    )
