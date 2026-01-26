@@ -1,0 +1,10 @@
+langchain
+langchain-core
+langchain-community
+langchain-openai
+langchain-groq
+langgraph
+langmem
+pandas
+pydantic
+requests

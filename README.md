@@ -1,55 +1,128 @@
 # Autonomous Root Cause Analysis Agent for Retail Operations
-AI-powered multi-agent Root Cause Analysis (RCA) system for detecting and explaining stockouts in retail &amp; supply-chain using LangGraph, LangChain, and ReAct Agents.
-This repository contains a memory-driven, autonomous multi-agent system for performing Root Cause Analysis (RCA) on retail operational issues such as stockouts during promotions.
 
-Unlike traditional dashboards or static analytics, this system:
-  Forms hypotheses
-  Decides which data to analyze
-  Iteratively validates findings
-  Persists investigation memory
-  Produces a full reasoning trace
+AI-powered multi-agent Root Cause Analysis (RCA) system for detecting and explaining stockouts in retail & supply-chain using LangGraph, LangChain, and ReAct Agents.
 
-**What This System Does**
+## What this project does
+
 Given a business-level prompt like:
-  Investigate why stores are experiencing stockouts during an active promotion
+
+```
+Investigate why stores are experiencing stockouts during an active promotion.
+```
 
 The system autonomously:
-  1.Generates competing hypotheses
-  2.Analyzes sales and inventory data
-  3.Iterates based on evidence
-  4.Converges on root causes
-  5.Produces an explainable RCA report
+1. Generates competing hypotheses
+2. Analyzes sales and inventory data
+3. Iterates based on evidence
+4. Converges on root causes
+5. Produces an explainable RCA report
 
-**Architecture Overview**
-The system is built using:
-  LangGraph for agent orchestration
-  LangChain agents for reasoning
-  LangMem for short-term and episodic memory
-  Python + Pandas for data analysis
+## Project layout
 
-**Core Agents**
-  **Hypothesis Agent** – Generates and refines explanations
-  **Sales Analysis Agent** – Detects demand-side anomalies
-  **Inventory Analysis Agent** – Evaluates execution-side availability
-  **Hypothesis Validation Agent** – Cross-validates evidence
-  **Router / Orchestration Agent** – Controls investigation flow
-All agents operate on a shared state and memory.
+```
+.
+├── data/
+│   ├── inventory_transactions.csv
+│   └── sales_transactions.csv
+├── src/
+│   └── rca_app/
+│       ├── app.py
+│       ├── agents.py
+│       ├── cli.py
+│       ├── config.py
+│       ├── data.py
+│       ├── evaluation.py
+│       ├── memory.py
+│       ├── memory_reflection.py
+│       ├── tools_inventory.py
+│       ├── tools_sales.py
+│       └── utils.py
+├── pyproject.toml
+└── requirements.txt
+```
 
-**Memory Design**
+## Setup
+
+1. **Create a virtual environment** (recommended) and install dependencies:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
+```
+
+2. **Configure Azure OpenAI** using environment variables:
+
+```bash
+export AZURE_OPENAI_ENDPOINT="https://your-resource.openai.azure.com"
+export AZURE_OPENAI_API_KEY="your-key"
+export AZURE_OPENAI_DEPLOYMENT="gpt-4.1-mini"
+
+# Optional overrides
+export AZURE_OPENAI_API_VERSION="2024-12-01-preview"
+export AZURE_OPENAI_EMBEDDINGS_MODEL="TxtEmbedAda002"
+export AZURE_OPENAI_EMBEDDINGS_ENDPOINT="$AZURE_OPENAI_ENDPOINT"
+export AZURE_OPENAI_EMBEDDINGS_API_KEY="$AZURE_OPENAI_API_KEY"
+export AZURE_OPENAI_EMBEDDINGS_API_VERSION="2023-05-15"
+```
+
+3. **(Optional) Point to a custom data directory** if you want to use your own CSVs:
+
+```bash
+export RCA_DATA_DIR="/absolute/path/to/data"
+```
+
+## Usage
+
+### Interactive chat
+
+```bash
+rca-app chat
+```
+
+You can also run directly with Python:
+
+```bash
+python -m rca_app chat
+```
+
+### Inspect memory contents
+
+```bash
+rca-app inspect-memory
+```
+
+## Architecture overview
+
+- **LangGraph** for agent orchestration
+- **LangChain** agents for reasoning
+- **LangMem** for short-term and episodic memory
+- **Python + Pandas** for data analysis
+
+### Core agents
+
+- **Hypothesis Agent** – Generates and refines explanations
+- **Sales Analysis Agent** – Detects demand-side anomalies
+- **Inventory Analysis Agent** – Evaluates execution-side availability
+- **Hypothesis Validation Agent** – Cross-validates evidence
+- **Router / Orchestration Agent** – Controls investigation flow
+
+### Memory design
+
 The system uses LangMem to persist investigation findings:
-
-  Agents store verified insights as memory
-  Future steps retrieve and reason over past findings
-  Prevents repeated analysis
-  Enables cumulative reasoning
+- Agents store verified insights as memory
+- Future steps retrieve and reason over past findings
+- Prevents repeated analysis
+- Enables cumulative reasoning
 
 Memory tools used:
-  create_search_memory_tool
-  create_manage_memory_tool
-     
-**Why This Architecture Works**
-  Loose coupling between agents
-  Centralized memory, not centralized logic
-  Evidence-driven convergence, not rule-based flows
-  Explainability by design
+- `create_search_memory_tool`
+- `create_manage_memory_tool`
 
+## Why this architecture works
+
+- Loose coupling between agents
+- Centralized memory, not centralized logic
+- Evidence-driven convergence, not rule-based flows
+- Explainability by design

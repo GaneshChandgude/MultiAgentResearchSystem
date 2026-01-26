@@ -1,0 +1,24 @@
+transaction_id,store_id,store_name,product_id,product_name,transaction_date,transaction_type,quantity,source_location,destination_location,notes
+INV001,S001,Downtown Store,P100,TechGadget Pro,2024-04-20,RECEIPT,300,WAREHOUSE_CENTRAL,S001,Regular replenishment
+INV002,S002,Westside Mall,P100,TechGadget Pro,2024-04-20,RECEIPT,250,WAREHOUSE_CENTRAL,S002,Regular replenishment
+INV003,S003,Eastview Plaza,P100,TechGadget Pro,2024-04-20,RECEIPT,280,WAREHOUSE_CENTRAL,S003,Regular replenishment
+INV004,S004,Northgate Center,P100,TechGadget Pro,2024-04-20,RECEIPT,220,WAREHOUSE_CENTRAL,S004,Regular replenishment
+INV005,S005,Southpark Store,P100,TechGadget Pro,2024-04-20,RECEIPT,260,WAREHOUSE_CENTRAL,S005,Regular replenishment
+INV006,S001,Downtown Store,P100,TechGadget Pro,2024-04-28,ADJUSTMENT,-15,S001,NONE,Cycle count adjustment - shrinkage detected
+INV007,S002,Westside Mall,P100,TechGadget Pro,2024-04-29,ADJUSTMENT,-22,S002,NONE,Physical inventory discrepancy - shrinkage
+INV008,S003,Eastview Plaza,P100,TechGadget Pro,2024-04-28,ADJUSTMENT,-8,S003,NONE,Damaged units removed
+INV009,S005,Southpark Store,P100,TechGadget Pro,2024-04-29,ADJUSTMENT,-18,S005,NONE,Cycle count adjustment - shrinkage detected
+INV010,WAREHOUSE_CENTRAL,Central Warehouse,P100,TechGadget Pro,2024-04-30,RECEIPT,1500,SUPPLIER,WAREHOUSE_CENTRAL,Promotion stock ordered
+INV011,S004,Northgate Center,P100,TechGadget Pro,2024-05-01,TRANSFER,-50,S004,S002,Emergency transfer to Westside Mall
+INV012,S002,Westside Mall,P100,TechGadget Pro,2024-05-01,TRANSFER,50,S004,S002,Emergency transfer from Northgate
+INV013,S001,Downtown Store,P100,TechGadget Pro,2024-05-03,RECEIPT,150,WAREHOUSE_CENTRAL,S001,Promotion replenishment - DELAYED 2 days
+INV014,S002,Westside Mall,P100,TechGadget Pro,2024-05-03,RECEIPT,120,WAREHOUSE_CENTRAL,S002,Promotion replenishment - DELAYED 2 days
+INV015,S003,Eastview Plaza,P100,TechGadget Pro,2024-05-03,RECEIPT,140,WAREHOUSE_CENTRAL,S003,Promotion replenishment - DELAYED 2 days
+INV016,S004,Northgate Center,P100,TechGadget Pro,2024-05-03,RECEIPT,100,WAREHOUSE_CENTRAL,S004,Promotion replenishment - DELAYED 2 days
+INV017,S005,Southpark Store,P100,TechGadget Pro,2024-05-03,RECEIPT,130,WAREHOUSE_CENTRAL,S005,Promotion replenishment - DELAYED 2 days
+INV018,S002,Westside Mall,P100,TechGadget Pro,2024-05-04,ADJUSTMENT,-12,S002,NONE,Additional shrinkage found during stockout investigation
+INV019,S004,Northgate Center,P100,TechGadget Pro,2024-05-05,RECEIPT,80,WAREHOUSE_CENTRAL,S004,Emergency replenishment
+INV020,S001,Downtown Store,P100,TechGadget Pro,2024-05-06,RECEIPT,100,WAREHOUSE_CENTRAL,S001,Emergency replenishment
+INV021,S002,Westside Mall,P100,TechGadget Pro,2024-05-06,RECEIPT,90,WAREHOUSE_CENTRAL,S002,Emergency replenishment
+INV022,S003,Eastview Plaza,P100,TechGadget Pro,2024-05-06,RECEIPT,110,WAREHOUSE_CENTRAL,S003,Emergency replenishment
+INV023,S005,Southpark Store,P100,TechGadget Pro,2024-05-06,RECEIPT,95,WAREHOUSE_CENTRAL,S005,Emergency replenishment
