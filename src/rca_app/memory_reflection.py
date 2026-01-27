@@ -23,7 +23,7 @@ Review the conversation and create a memory reflection following these rules:
 4. Context_tags must be specific enough to match similar RCA situations but general enough to be reusable
 
 Output valid JSON in exactly this format:
-{
+{{
     "context_tags": [               // 2–4 keywords identifying similar RCA scenarios
         string,                     // Use domain-specific terms like "sales_decline", "inventory_stockout", "logistics_delay", "forecast_bias"
         ...
@@ -31,7 +31,7 @@ Output valid JSON in exactly this format:
     "conversation_summary": string, // One sentence describing what RCA problem was addressed and resolved
     "what_worked": string,          // Most effective RCA technique or reasoning strategy used
     "what_to_avoid": string         // Key RCA pitfall or ineffective approach to avoid in future
-}
+}}
 
 Do not include any text outside the JSON object in your response.
 
@@ -52,12 +52,12 @@ Extract:
 4. Decision rules
 
 Output JSON:
-{
+{{
   "procedure_name": "string",
   "applicable_when": "string",
   "steps": ["step1", "step2", "..."],
   "tool_heuristics": ["rule1", "rule2"]
-}
+}}
 Conversation:
 {conversation}
 """
@@ -74,11 +74,11 @@ Rules:
 - One semantic fact should apply to many future RCA cases
 
 Output ONLY valid JSON in this format:
-{
+{{
   "semantic_fact": "string",
   "applicable_context": ["keyword1", "keyword2"],
   "confidence": "low | medium | high"
-}
+}}
 
 Episodic memories:
 {episodes}
