@@ -31,6 +31,32 @@ def build_hypothesis_tool(config: AppConfig, store, checkpointer, llm):
 
     @tool
     def hypothesis_agent_tool(task: str, user_id: str, query_id: str, memory_context: str) -> Dict[str, Any]:
+        """
+        Purpose:
+            Generate multiple plausible root-cause hypotheses for a given RCA query.
+
+        When to use:
+            Use this tool when an RCA investigation requires enumerating
+            possible causes of an observed problem. This is typically
+            the first analytical step after query routing.
+
+        Inputs:
+            - task (str): The resolved and disambiguated user query.
+            - user_id (str): Identifier of the user or session.
+            - query_id (str): Unique identifier of the current query/thread.
+            - memory_context (str): episodic + conversation memory
+
+        Output:
+            - dict: Contains updated fields:
+                - "hypotheses" (List[str]): Newly generated root-cause hypotheses.
+                - "trace" (List[Dict]): Trace entry recording the tool call.
+
+        Notes:
+            - Hypotheses are returned as plain strings with no categorization.
+            - This tool does not validate hypotheses.
+            - It may read from long-term memory but only updates the provided data.
+            - Subsequent tools or agents are expected to validate or eliminate hypotheses.
+        """
         messages = [
             {
                 "role": "system",
@@ -107,6 +133,43 @@ def build_sales_analysis_tool(config: AppConfig, store, checkpointer, llm):
         query_id: str,
         memory_context: str,
     ) -> Dict[str, Any]:
+        """
+        Purpose:
+            Analyze sales and promotion data to evaluate hypotheses that may
+            explain observed issues in an RCA investigation.
+
+        When to use:
+            Use this tool after hypotheses have been generated and when
+            sales, demand, forecasting, or promotion-related factors may
+            contribute to the problem.
+
+        Inputs:
+            - task (str):
+                The resolved RCA task or problem statement to analyze.
+            - hypotheses (List[str]):
+                A list of candidate root-cause hypotheses to be validated
+                from a sales perspective.
+            - user_id (str):
+                Identifier for the user or session, used for scoped memory access.
+            - query_id (str):
+                Unique identifier for the current RCA query or thread.
+            - memory_context (str): episodic + conversation memory
+
+        Output:
+            - dict:
+                Contains the following fields:
+                - "sales_insights":
+                    Structured findings derived from sales and promotion data
+                    that support or refute the provided hypotheses.
+                - "trace":
+                    A list of trace entries capturing tool calls and reasoning
+                    steps performed during the analysis.
+        Notes:
+            - This tool may call sales and promotion data tools as needed.
+            - The output is strictly structured and intended for downstream
+              RCA agents or summarization steps.
+            - The tool does not mutate external state.
+        """
         sales_related_hypotheses = [
             h
             for h in hypotheses
@@ -195,6 +258,28 @@ def build_inventory_analysis_tool(config: AppConfig, store, checkpointer, llm, p
         query_id: str,
         memory_context: str,
     ) -> Dict[str, Any]:
+        """
+        Purpose:
+            Analyze inventory movements, replenishments, transfers, and
+            adjustments to validate inventory-related RCA hypotheses.
+
+        When to use:
+            Use this tool when stock availability, shrinkage, replenishment
+            timing, transfers, or warehouse operations may contribute to
+            the observed problem.
+
+        Inputs:
+            - task (str): Resolved RCA task or problem statement
+            - hypotheses (List[str]): Candidate hypotheses to validate
+            - user_id (str): User/session identifier for scoped memory access
+            - query_id (str): Query/thread identifier
+            - memory_context (str): episodic + conversation memory
+
+        Output:
+            - dict:
+                - "inventory_insights": Structured inventory analysis
+                - "trace": Tool-call trace for observability
+        """
         inventory_related_hypotheses = [
             h
             for h in hypotheses
@@ -290,6 +375,33 @@ def build_validation_tool(config: AppConfig, store, checkpointer, llm):
         user_id: str,
         query_id: str,
     ) -> Dict[str, Any]:
+        """
+        Purpose:
+            Validate each hypothesis by cross-referencing sales and inventory
+            insights gathered during the RCA investigation.
+
+        When to use:
+            Use this tool after domain-specific analysis tools (e.g., Sales,
+            Inventory) have produced structured insights.
+
+        Inputs:
+            - hypotheses (List[str]):
+                Hypotheses to be validated.
+            - sales_insights (dict):
+                Output from the Sales Analysis tool.
+            - inventory_insights (dict):
+                Output from the Inventory Analysis tool.
+            - user_id (str):
+                User/session identifier for scoped memory access.
+            - query_id (str):
+                Query/thread identifier.
+
+        Output:
+            - dict:
+                - "validated": Mapping of hypothesis → true / false
+                - "reasoning": Mapping of hypothesis → explanation
+                - "trace": Tool-call trace for observability
+        """
         messages = [
             {
                 "role": "system",
@@ -361,6 +473,29 @@ def build_root_cause_tool(config: AppConfig, store, checkpointer, llm):
         user_id: str,
         query_id: str,
     ) -> Dict[str, Any]:
+        """
+        Purpose:
+            Produce the final Root Cause Analysis by synthesizing validated
+            hypotheses, sales insights, inventory insights, and prior analysis
+            trace into a structured RCA outcome.
+
+        When to use:
+            Use this tool after hypothesis validation has been completed.
+
+        Inputs:
+            - validated_hypotheses (dict): Hypothesis → true/false mapping
+            - sales_insights (dict): Sales analysis output
+            - inventory_insights (dict): Inventory analysis output
+            - trace (list): Prior agent trace entries
+            - user_id (str): User/session identifier for scoped memory access
+            - query_id (str): Query/thread identifier
+
+        Output:
+            - dict:
+                - "root_cause": Final structured RCA
+                - "reasoning": Explanation of RCA decisions
+                - "trace": Tool-call trace for observability
+        """
         messages = [
             {
                 "role": "system",
@@ -460,6 +595,25 @@ def build_report_tool(config: AppConfig, store, checkpointer, llm):
     def rca_report_agent_tool(
         root_cause: str, reasoning: str, user_id: str, query_id: str
     ) -> Dict[str, Any]:
+        """
+        Purpose:
+            Produce the final human-readable report.
+
+        When to use:
+            Use this tool as the final step of an RCA workflow to generate a
+            human-readable report.
+
+        Inputs:
+            - root_cause (str): root cause
+            - reasoning (str): reasoning
+            - user_id (str): User/session identifier for scoped memory access
+            - query_id (str): Query/thread identifier
+
+        Output:
+            - dict:
+                - "report_text": Human-readable RCA report
+                - "trace": Tool-call trace for observability
+        """
         report_messages = [
             {
                 "role": "system",
