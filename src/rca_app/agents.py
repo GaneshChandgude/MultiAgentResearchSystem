@@ -12,8 +12,7 @@ from langmem import create_manage_memory_tool, create_search_memory_tool
 from .config import AppConfig
 from .llm import get_llm_model
 from .memory import build_memory_augmented_prompt, append_rca_history
-from .tools_inventory import build_inventory_tools
-from .tools_sales import build_sales_tools
+from .toolsets import build_salesforce_toolset, build_sap_business_one_toolset, find_tool
 from .types import RCAState
 from .utils import filter_tool_messages, handle_tool_errors, process_response, serialize_messages
 
@@ -119,8 +118,8 @@ JSON schema:
     return hypothesis_agent_tool
 
 
-def build_sales_analysis_tool(config: AppConfig, store, checkpointer, llm):
-    sales_tools = build_sales_tools(config)
+def build_sales_analysis_tool(config: AppConfig, store, checkpointer, llm, sales_tools):
+    sales_tools = list(sales_tools)
     sales_tools += [
         create_manage_memory_tool(namespace=("sales", "{user_id}")),
         create_search_memory_tool(namespace=("sales", "{user_id}")),
@@ -251,8 +250,10 @@ Hypotheses: {sales_related_hypotheses}
     return sales_analysis_agent_tool, sales_tools
 
 
-def build_inventory_analysis_tool(config: AppConfig, store, checkpointer, llm, promo_tool):
-    inventory_tools = [promo_tool] + build_inventory_tools(config)
+def build_inventory_analysis_tool(
+    config: AppConfig, store, checkpointer, llm, inventory_tools, promo_tool
+):
+    inventory_tools = [promo_tool] + list(inventory_tools)
     inventory_tools += [
         create_manage_memory_tool(namespace=("inventory", "{user_id}")),
         create_search_memory_tool(namespace=("inventory", "{user_id}")),
@@ -848,9 +849,15 @@ def build_agents(config: AppConfig, store, checkpointer):
     logger.info("Initializing RCA agents")
     llm = get_llm_model(config)
     hypothesis_tool = build_hypothesis_tool(config, store, checkpointer, llm)
-    sales_tool, sales_tools = build_sales_analysis_tool(config, store, checkpointer, llm)
-    promo_tool = next(tool for tool in sales_tools if tool.name == "get_promo_period")
-    inventory_tool = build_inventory_analysis_tool(config, store, checkpointer, llm, promo_tool)
+    salesforce_toolset = build_salesforce_toolset(config)
+    sap_toolset = build_sap_business_one_toolset(config)
+    sales_tool, sales_tools = build_sales_analysis_tool(
+        config, store, checkpointer, llm, salesforce_toolset.tools
+    )
+    promo_tool = find_tool([salesforce_toolset], "get_promo_period")
+    inventory_tool = build_inventory_analysis_tool(
+        config, store, checkpointer, llm, sap_toolset.tools, promo_tool
+    )
     validation_tool = build_validation_tool(config, store, checkpointer, llm)
     root_cause_tool = build_root_cause_tool(config, store, checkpointer, llm)
     report_tool = build_report_tool(config, store, checkpointer, llm)

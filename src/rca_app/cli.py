@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .app import build_app
 from .config import load_config, resolve_data_dir
+from .mcp_servers import run_salesforce_mcp, run_sap_business_one_mcp
 from .memory import mark_memory_useful, semantic_recall
 from .memory_reflection import add_episodic_memory, add_procedural_memory, build_semantic_memory
 
@@ -143,6 +144,16 @@ def main(argv: list[str] | None = None):
 
     subparsers.add_parser("chat", help="Start interactive RCA chat")
     subparsers.add_parser("inspect-memory", help="Inspect stored memory")
+    salesforce_parser = subparsers.add_parser(
+        "mcp-salesforce", help="Run Salesforce MCP SSE server"
+    )
+    salesforce_parser.add_argument("--host", default="0.0.0.0")
+    salesforce_parser.add_argument("--port", type=int, default=8600)
+    sap_parser = subparsers.add_parser(
+        "mcp-sap", help="Run SAP Business One MCP SSE server"
+    )
+    sap_parser.add_argument("--host", default="0.0.0.0")
+    sap_parser.add_argument("--port", type=int, default=8700)
 
     args = parser.parse_args(argv)
 
@@ -152,6 +163,12 @@ def main(argv: list[str] | None = None):
 
     if args.command == "inspect-memory":
         inspect_memory()
+        return 0
+    if args.command == "mcp-salesforce":
+        run_salesforce_mcp(load_config(), host=args.host, port=args.port)
+        return 0
+    if args.command == "mcp-sap":
+        run_sap_business_one_mcp(load_config(), host=args.host, port=args.port)
         return 0
 
     parser.print_help()
