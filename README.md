@@ -73,6 +73,13 @@ export AZURE_OPENAI_EMBEDDINGS_API_VERSION="2023-05-15"
 export RCA_DATA_DIR="/absolute/path/to/data"
 ```
 
+4. **(Optional) Configure logging output** (defaults to `data/rca_app.log`):
+
+```bash
+export RCA_LOG_FILE="/absolute/path/to/rca_app.log"
+export RCA_LOG_LEVEL="INFO"
+```
+
 ## Usage
 
 ### Interactive chat
