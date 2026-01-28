@@ -3,13 +3,43 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
+from pathlib import Path
 
 from .app import build_app
-from .config import load_config
+from .config import load_config, resolve_data_dir
 from .memory import mark_memory_useful, semantic_recall
 from .memory_reflection import add_episodic_memory, add_procedural_memory, build_semantic_memory
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_LOG_FILE = "rca_app.log"
+DEFAULT_LOG_LEVEL = "INFO"
+
+
+def configure_logging() -> Path:
+    log_path = os.getenv("RCA_LOG_FILE", "").strip()
+    if log_path:
+        log_file = Path(log_path).expanduser().resolve()
+    else:
+        log_file = resolve_data_dir() / DEFAULT_LOG_FILE
+
+    log_level = os.getenv("RCA_LOG_LEVEL", DEFAULT_LOG_LEVEL).upper()
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.INFO),
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler(),
+        ],
+        force=True,
+    )
+
+    logging.getLogger(__name__).info("Logging initialized at %s", log_file)
+    return log_file
+
 
 def run_chat():
     config = load_config()
@@ -102,6 +132,7 @@ def inspect_memory():
 
 
 def main(argv: list[str] | None = None):
+    configure_logging()
     parser = argparse.ArgumentParser(description="RCA project CLI")
     subparsers = parser.add_subparsers(dest="command")
 
