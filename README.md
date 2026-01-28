@@ -32,8 +32,11 @@ The system autonomously:
 │       ├── config.py
 │       ├── data.py
 │       ├── evaluation.py
+│       ├── local_toolsets.py
 │       ├── memory.py
 │       ├── memory_reflection.py
+│       ├── mcp_toolset.py
+│       ├── toolset_registry.py
 │       ├── tools_inventory.py
 │       ├── tools_sales.py
 │       └── utils.py
@@ -80,6 +83,13 @@ export RCA_LOG_FILE="/absolute/path/to/rca_app.log"
 export RCA_LOG_LEVEL="INFO" # Use DEBUG for detailed tracing
 ```
 
+5. **Configure MCP toolset endpoints** for Salesforce and SAP:
+
+```bash
+export RCA_MCP_SALESFORCE_URL="http://localhost:8600"
+export RCA_MCP_SAP_URL="http://localhost:8700"
+```
+
 ## Usage
 
 ### Interactive chat
@@ -99,6 +109,18 @@ python -m rca_app chat
 ```bash
 rca-app inspect-memory
 ```
+
+### Run MCP toolset servers (SSE)
+
+Start the local MCP servers that expose Salesforce and SAP toolsets over SSE:
+
+```bash
+rca-app mcp-salesforce --host 0.0.0.0 --port 8600
+rca-app mcp-sap --host 0.0.0.0 --port 8700
+```
+
+When running the agent, point `RCA_MCP_SALESFORCE_URL` and `RCA_MCP_SAP_URL` to the
+servers above so the agent resolves tools remotely.
 
 ## Architecture overview
 

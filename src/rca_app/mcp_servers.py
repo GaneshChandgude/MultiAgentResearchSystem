@@ -7,7 +7,11 @@ from typing import Any, Dict
 
 from mcp.server.fastmcp import FastMCP
 
-from .toolsets import Toolset, build_salesforce_toolset, build_sap_business_one_toolset
+from .local_toolsets import (
+    build_local_salesforce_toolset,
+    build_local_sap_business_one_toolset,
+)
+from .toolset_registry import Toolset
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +55,10 @@ def run_mcp_server(toolset: Toolset, host: str, port: int) -> None:
 
 
 def run_salesforce_mcp(config: AppConfig, host: str, port: int) -> None:
-    toolset = build_salesforce_toolset(config)
+    toolset = build_local_salesforce_toolset(config)
     run_mcp_server(toolset, host=host, port=port)
 
 
 def run_sap_business_one_mcp(config: AppConfig, host: str, port: int) -> None:
-    toolset = build_sap_business_one_toolset(config)
+    toolset = build_local_sap_business_one_toolset(config)
     run_mcp_server(toolset, host=host, port=port)

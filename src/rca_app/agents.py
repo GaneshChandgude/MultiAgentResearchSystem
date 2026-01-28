@@ -12,7 +12,8 @@ from langmem import create_manage_memory_tool, create_search_memory_tool
 from .config import AppConfig
 from .llm import get_llm_model
 from .memory import build_memory_augmented_prompt, append_rca_history
-from .toolsets import build_salesforce_toolset, build_sap_business_one_toolset, find_tool
+from .toolset_registry import ToolsetRegistry
+from .toolsets import build_salesforce_toolset, build_sap_business_one_toolset
 from .types import RCAState
 from .utils import filter_tool_messages, handle_tool_errors, process_response, serialize_messages
 
@@ -851,10 +852,11 @@ def build_agents(config: AppConfig, store, checkpointer):
     hypothesis_tool = build_hypothesis_tool(config, store, checkpointer, llm)
     salesforce_toolset = build_salesforce_toolset(config)
     sap_toolset = build_sap_business_one_toolset(config)
+    tool_registry = ToolsetRegistry([salesforce_toolset, sap_toolset])
     sales_tool, sales_tools = build_sales_analysis_tool(
         config, store, checkpointer, llm, salesforce_toolset.tools
     )
-    promo_tool = find_tool([salesforce_toolset], "get_promo_period")
+    promo_tool = tool_registry.find_tool("get_promo_period")
     inventory_tool = build_inventory_analysis_tool(
         config, store, checkpointer, llm, sap_toolset.tools, promo_tool
     )

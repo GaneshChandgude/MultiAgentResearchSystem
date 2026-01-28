@@ -16,6 +16,8 @@ class AppConfig:
     embeddings_api_key: str
     embeddings_api_version: str
     data_dir: Path
+    salesforce_mcp_url: str
+    sap_mcp_url: str
 
 
 DEFAULT_AZURE_API_VERSION = "2024-12-01-preview"
@@ -37,6 +39,8 @@ def load_config() -> AppConfig:
 
     embeddings_endpoint = os.getenv("AZURE_OPENAI_EMBEDDINGS_ENDPOINT", endpoint).strip()
     embeddings_api_key = os.getenv("AZURE_OPENAI_EMBEDDINGS_API_KEY", api_key).strip()
+    salesforce_mcp_url = os.getenv("RCA_MCP_SALESFORCE_URL", "http://localhost:8600").strip()
+    sap_mcp_url = os.getenv("RCA_MCP_SAP_URL", "http://localhost:8700").strip()
 
     return AppConfig(
         azure_openai_endpoint=endpoint,
@@ -48,4 +52,6 @@ def load_config() -> AppConfig:
         embeddings_api_key=embeddings_api_key,
         embeddings_api_version=os.getenv("AZURE_OPENAI_EMBEDDINGS_API_VERSION", DEFAULT_EMBEDDINGS_API_VERSION),
         data_dir=resolve_data_dir(),
+        salesforce_mcp_url=salesforce_mcp_url,
+        sap_mcp_url=sap_mcp_url,
     )
