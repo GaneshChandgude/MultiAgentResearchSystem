@@ -59,6 +59,12 @@ def build_hypothesis_tool(config: AppConfig, store, checkpointer, llm):
             - It may read from long-term memory but only updates the provided data.
             - Subsequent tools or agents are expected to validate or eliminate hypotheses.
         """
+        logger.debug(
+            "Hypothesis tool invoked user_id=%s query_id=%s task_length=%s",
+            user_id,
+            query_id,
+            len(task),
+        )
         messages = [
             {
                 "role": "system",
@@ -96,6 +102,7 @@ JSON schema:
         output = process_response(final_msg, llm=llm)
 
         hypotheses: List[str] = output.get("hypotheses", [])
+        logger.debug("Hypothesis tool produced %s hypotheses", len(hypotheses))
 
         internal_msgs = result["messages"][2:-1]
         tool_call_msgs = filter_tool_messages(internal_msgs)
@@ -172,6 +179,12 @@ def build_sales_analysis_tool(config: AppConfig, store, checkpointer, llm):
               RCA agents or summarization steps.
             - The tool does not mutate external state.
         """
+        logger.debug(
+            "Sales analysis tool invoked user_id=%s query_id=%s hypotheses=%s",
+            user_id,
+            query_id,
+            len(hypotheses),
+        )
         sales_related_hypotheses = [
             h
             for h in hypotheses
@@ -221,6 +234,7 @@ Hypotheses: {sales_related_hypotheses}
         final_msg = result["messages"][-1].content
         output = process_response(final_msg, llm=llm)
         sales_insights = output.get("sales_insights")
+        logger.debug("Sales analysis produced insights keys=%s", list(sales_insights or {}))
 
         internal_msgs = result["messages"][2:-1]
         tool_call_msgs = filter_tool_messages(internal_msgs)
@@ -282,6 +296,12 @@ def build_inventory_analysis_tool(config: AppConfig, store, checkpointer, llm, p
                 - "inventory_insights": Structured inventory analysis
                 - "trace": Tool-call trace for observability
         """
+        logger.debug(
+            "Inventory analysis tool invoked user_id=%s query_id=%s hypotheses=%s",
+            user_id,
+            query_id,
+            len(hypotheses),
+        )
         inventory_related_hypotheses = [
             h
             for h in hypotheses
@@ -341,6 +361,7 @@ Hypotheses to validate: {inventory_related_hypotheses}
         final_msg = result["messages"][-1].content
         output = process_response(final_msg, llm=llm)
         inventory_insights = output.get("inventory_insights")
+        logger.debug("Inventory analysis produced insights keys=%s", list(inventory_insights or {}))
 
         internal_msgs = result["messages"][2:-1]
         tool_call_msgs = filter_tool_messages(internal_msgs)
@@ -404,6 +425,12 @@ def build_validation_tool(config: AppConfig, store, checkpointer, llm):
                 - "reasoning": Mapping of hypothesis → explanation
                 - "trace": Tool-call trace for observability
         """
+        logger.debug(
+            "Validation tool invoked user_id=%s query_id=%s hypotheses=%s",
+            user_id,
+            query_id,
+            len(hypotheses),
+        )
         messages = [
             {
                 "role": "system",
@@ -441,6 +468,7 @@ Inventory insights:
         result = validation_react_agent.invoke({"messages": messages}, tool_config)
         final_msg = result["messages"][-1].content
         resp = process_response(final_msg, llm=llm)
+        logger.debug("Validation tool returned validated keys=%s", list((resp.get("validated") or {}).keys()))
 
         internal_msgs = result["messages"][2:-1]
         tool_call_msgs = filter_tool_messages(internal_msgs)
@@ -498,6 +526,12 @@ def build_root_cause_tool(config: AppConfig, store, checkpointer, llm):
                 - "reasoning": Explanation of RCA decisions
                 - "trace": Tool-call trace for observability
         """
+        logger.debug(
+            "Root cause tool invoked user_id=%s query_id=%s validated_hypotheses=%s",
+            user_id,
+            query_id,
+            len(validated_hypotheses),
+        )
         messages = [
             {
                 "role": "system",
@@ -568,6 +602,7 @@ Prior trace:
         resp = process_response(final_msg, llm=llm)
         root_cause = resp.get("root_cause")
         reasoning = resp.get("reasoning")
+        logger.debug("Root cause tool generated root_cause=%s reasoning=%s", bool(root_cause), bool(reasoning))
 
         internal_msgs = result["messages"][2:-1]
         tool_call_msgs = filter_tool_messages(internal_msgs)
@@ -616,6 +651,11 @@ def build_report_tool(config: AppConfig, store, checkpointer, llm):
                 - "report_text": Human-readable RCA report
                 - "trace": Tool-call trace for observability
         """
+        logger.debug(
+            "Report tool invoked user_id=%s query_id=%s",
+            user_id,
+            query_id,
+        )
         report_messages = [
             {
                 "role": "system",
@@ -662,6 +702,7 @@ Use the following structured RCA output:
 
         tool_config = {"configurable": {"user_id": user_id, "thread_id": query_id}}
         report_text = rca_report_agent.invoke(report_messages, tool_config).content
+        logger.debug("Report tool generated report length=%s", len(report_text))
 
         report_trace_entry = {
             "agent": "RootCauseAnalysisAgent",
@@ -696,6 +737,7 @@ def orchestration_agent(rca_state: RCAState, config: Dict[str, Any], store, rout
         config=config,
         store=store,
     )
+    logger.debug("Memory context length=%s", len(memory_context))
 
     messages = [
         {
@@ -776,6 +818,11 @@ deep-research agent, not a fixed pipeline.
         "configurable": {**config.get("configurable", {}), "rca_state": rca_state},
     }
 
+    logger.debug(
+        "Invoking router agent user_id=%s query_id=%s",
+        config["configurable"]["user_id"],
+        config["configurable"]["thread_id"],
+    )
     result = router_agent.invoke({"messages": messages}, tool_config)
     final_msg = result["messages"][-1].content
 
@@ -790,6 +837,7 @@ deep-research agent, not a fixed pipeline.
     rca_state["output"] = final_msg
     rca_state["trace"] = trace_entry
     logger.info("Orchestration agent completed for user_id=%s", config["configurable"]["user_id"])
+    logger.debug("Orchestration agent tool call count=%s", len(trace_entry["tool_calls"]))
 
     append_rca_history(rca_state)
 

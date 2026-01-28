@@ -37,6 +37,7 @@ def setup_memory(config: AppConfig) -> MemoryStores:
 
 
 def append_rca_history(state: Dict[str, Any]) -> None:
+    logger.debug("Appending RCA history entries")
     if state.get("task"):
         state.setdefault("history", []).append(HumanMessage(content=state["task"]))
     if state.get("output"):
@@ -46,12 +47,16 @@ def append_rca_history(state: Dict[str, Any]) -> None:
 
 def episodic_recall(query: str, store: BaseStore, config: Dict[str, Any]):
     namespace = ("episodic", config["configurable"]["user_id"])
-    return store.search(namespace, query=query, limit=1)
+    results = store.search(namespace, query=query, limit=1)
+    logger.debug("Episodic recall returned %s records", len(results))
+    return results
 
 
 def procedural_recall(task: str, store: BaseStore, config: Dict[str, Any]):
     namespace = ("procedural", config["configurable"]["user_id"])
-    return store.search(namespace, query=task, limit=3)
+    results = store.search(namespace, query=task, limit=3)
+    logger.debug("Procedural recall returned %s records", len(results))
+    return results
 
 
 def semantic_recall(query: str, store: BaseStore, config: Dict[str, Any], limit: int = 3):
@@ -73,7 +78,9 @@ def semantic_recall(query: str, store: BaseStore, config: Dict[str, Any], limit:
 
         decayed.append(r)
 
-    return decayed[:limit]
+    final = decayed[:limit]
+    logger.debug("Semantic recall returned %s records", len(final))
+    return final
 
 
 def build_memory_augmented_prompt(
@@ -82,6 +89,7 @@ def build_memory_augmented_prompt(
     config: Dict[str, Any],
     store: BaseStore,
 ) -> str:
+    logger.debug("Building memory augmented prompt for query length=%s", len(query))
     semantic_memories = semantic_recall(query, store, config, 3)
 
     if semantic_memories:
@@ -156,7 +164,9 @@ Instructions:
 - Use recent conversation context for continuity
 """
 
-    return prompt.strip()
+    prompt = prompt.strip()
+    logger.debug("Memory augmented prompt length=%s", len(prompt))
+    return prompt
 
 
 def format_conversation(history: List[BaseMessage]) -> str:
@@ -174,3 +184,4 @@ def format_conversation(history: List[BaseMessage]) -> str:
 def mark_memory_useful(memories: List[Any]) -> None:
     for m in memories:
         m.value["usefulness"] = m.value.get("usefulness", 0) + 1
+    logger.debug("Marked %s memories as useful", len(memories))

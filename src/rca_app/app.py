@@ -60,4 +60,5 @@ def run_rca(app: RCAApp, task: str, user_id: str, query_id: str) -> Dict[str, An
         "trace": [],
     }
     logger.info("Running RCA for user_id=%s query_id=%s", user_id, query_id)
+    logger.debug("RCA task length=%s", len(task))
     return app.app.invoke(rca_state, config)

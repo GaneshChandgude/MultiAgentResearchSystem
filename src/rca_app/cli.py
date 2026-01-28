@@ -37,7 +37,9 @@ def configure_logging() -> Path:
         force=True,
     )
 
-    logging.getLogger(__name__).info("Logging initialized at %s", log_file)
+    logging.getLogger(__name__).info(
+        "Logging initialized at %s (level=%s)", log_file, log_level
+    )
     return log_file
 
 

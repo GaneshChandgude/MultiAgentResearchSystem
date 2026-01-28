@@ -77,7 +77,7 @@ export RCA_DATA_DIR="/absolute/path/to/data"
 
 ```bash
 export RCA_LOG_FILE="/absolute/path/to/rca_app.log"
-export RCA_LOG_LEVEL="INFO"
+export RCA_LOG_LEVEL="INFO" # Use DEBUG for detailed tracing
 ```
 
 ## Usage

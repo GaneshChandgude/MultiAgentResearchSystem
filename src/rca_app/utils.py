@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any, Dict, List
 
 from langchain.agents.middleware import wrap_tool_call
 from langchain.messages import ToolMessage
 from langchain_core.messages import AIMessage
+
+logger = logging.getLogger(__name__)
 
 
 def extract_json_from_response(response_text: str) -> str:
@@ -39,17 +42,20 @@ Return ONLY the corrected JSON.
 """
 
     last_exception = None
+    logger.debug("Processing LLM response content length=%s", len(response_content))
 
-    for _ in range(3):
+    for attempt in range(1, 4):
         try:
             content = extract_json_from_response(response_content)
             if isinstance(content, str):
                 content = json.loads(content)
             if isinstance(content, str):
                 content = json.loads(content)
+            logger.debug("Successfully parsed response on attempt %s", attempt)
             return content
         except json.JSONDecodeError as e:
             last_exception = e
+            logger.debug("JSON decode failed on attempt %s: %s", attempt, e)
             if llm is None:
                 break
             recovery_prompt = {

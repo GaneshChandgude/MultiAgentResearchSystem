@@ -1,20 +1,26 @@
 from __future__ import annotations
 
+import logging
 from langchain.tools import tool
 import pandas as pd
 
 from .config import AppConfig
 from .data import load_inventory, load_sales
 
+logger = logging.getLogger(__name__)
+
 
 def build_inventory_tools(config: AppConfig):
     @tool
     def get_unique_stores() -> dict:
         """Return list of unique store_ids from sales and inventory timeline."""
+        logger.debug("get_unique_stores invoked")
         sales_df = load_sales(config)
         inv_df = load_inventory(config)
         stores = sorted(pd.concat([sales_df["store_id"], inv_df["store_id"]]).dropna().unique())
-        return {"stores": stores}
+        result = {"stores": stores}
+        logger.debug("get_unique_stores returning %s stores", len(stores))
+        return result
 
     def drop_store_name(df):
         return df.drop(columns=["store_name"], errors="ignore")
@@ -25,6 +31,11 @@ def build_inventory_tools(config: AppConfig):
         Compute theoretical on-hand inventory after promo sales for each store.
         Inputs: promo_start (YYYY-MM-DD), promo_end (YYYY-MM-DD)
         """
+        logger.debug(
+            "theoretical_onhand_after_promo_sales invoked promo_start=%s promo_end=%s",
+            promo_start,
+            promo_end,
+        )
         sales = load_sales(config)
         inv = load_inventory(config)
         promo_start_dt = pd.to_datetime(promo_start)
@@ -103,7 +114,9 @@ def build_inventory_tools(config: AppConfig):
             summary["theoretical_after_changes"] - summary["promo_qty_sold"]
         )
 
-        return summary.to_dict(orient="records")
+        records = summary.to_dict(orient="records")
+        logger.debug("theoretical_onhand_after_promo_sales returning %s records", len(records))
+        return records
 
     @tool
     def get_daily_inventory_for_store(store_id: str):
@@ -111,6 +124,7 @@ def build_inventory_tools(config: AppConfig):
         Return daily inventory on-hand timeline for a given store_id.
         Computes daily movements, sales, net change, running inventory.
         """
+        logger.debug("get_daily_inventory_for_store invoked store_id=%s", store_id)
         inv = load_inventory(config)
         sales = load_sales(config)
 
@@ -136,29 +150,42 @@ def build_inventory_tools(config: AppConfig):
         timeline["running_inventory"] = timeline.groupby("store")["net_change"].cumsum()
 
         result = timeline[timeline["store"] == store_id]
-        return result.to_dict(orient="records")
+        records = result.to_dict(orient="records")
+        logger.debug("get_daily_inventory_for_store returning %s records", len(records))
+        return records
 
     @tool
     def get_adjustments():
         """Return all shrinkage/adjustment rows."""
+        logger.debug("get_adjustments invoked")
         df = load_inventory(config)
         adjustments = df[df["transaction_type"] == "ADJUSTMENT"]
-        return adjustments.to_dict(orient="records")
+        records = adjustments.to_dict(orient="records")
+        logger.debug("get_adjustments returning %s records", len(records))
+        return records
 
     @tool
     def get_shrinkage_before_promo(promo_start: str):
         """Return shrinkage rows before promo start."""
+        logger.debug("get_shrinkage_before_promo invoked promo_start=%s", promo_start)
         df = load_inventory(config)
         promo_start_dt = pd.to_datetime(promo_start)
         result = df[
             (df["transaction_type"] == "ADJUSTMENT")
             & (df["transaction_date"] < promo_start_dt)
         ]
-        return result.to_dict(orient="records")
+        records = result.to_dict(orient="records")
+        logger.debug("get_shrinkage_before_promo returning %s records", len(records))
+        return records
 
     @tool
     def get_shrinkage_during_promo(promo_start: str, promo_end: str):
         """Return shrinkage during promo."""
+        logger.debug(
+            "get_shrinkage_during_promo invoked promo_start=%s promo_end=%s",
+            promo_start,
+            promo_end,
+        )
         df = load_inventory(config)
         promo_start_dt = pd.to_datetime(promo_start)
         promo_end_dt = pd.to_datetime(promo_end)
@@ -167,56 +194,76 @@ def build_inventory_tools(config: AppConfig):
             & (df["transaction_date"] >= promo_start_dt)
             & (df["transaction_date"] <= promo_end_dt)
         ]
-        return result.to_dict(orient="records")
+        records = result.to_dict(orient="records")
+        logger.debug("get_shrinkage_during_promo returning %s records", len(records))
+        return records
 
     @tool
     def get_delayed_replenishments():
         """Return all inventory rows with DELAYED note."""
+        logger.debug("get_delayed_replenishments invoked")
         df = load_inventory(config)
         delayed = df[df["notes"].str.contains("DELAYED", na=False)]
-        return delayed.to_dict(orient="records")
+        records = delayed.to_dict(orient="records")
+        logger.debug("get_delayed_replenishments returning %s records", len(records))
+        return records
 
     @tool
     def get_promo_replenishment_for_date(date: str):
         """Return receipts for given date."""
+        logger.debug("get_promo_replenishment_for_date invoked date=%s", date)
         df = load_inventory(config)
         date_dt = pd.to_datetime(date)
         promo_repl = df[
             (df["transaction_date"] == date_dt)
             & (df["transaction_type"] == "RECEIPT")
         ]
-        return promo_repl.to_dict(orient="records")
+        records = promo_repl.to_dict(orient="records")
+        logger.debug("get_promo_replenishment_for_date returning %s records", len(records))
+        return records
 
     @tool
     def get_all_transfers():
         """Return all transfer rows."""
+        logger.debug("get_all_transfers invoked")
         df = load_inventory(config)
         transfers = df[df["transaction_type"] == "TRANSFER"]
-        return transfers.to_dict(orient="records")
+        records = transfers.to_dict(orient="records")
+        logger.debug("get_all_transfers returning %s records", len(records))
+        return records
 
     @tool
     def get_transfers_for_date(date: str):
         """Return transfers for a given date."""
+        logger.debug("get_transfers_for_date invoked date=%s", date)
         df = load_inventory(config)
         date_dt = pd.to_datetime(date)
         result = df[
             (df["transaction_type"] == "TRANSFER")
             & (df["transaction_date"] == date_dt)
         ]
-        return result.to_dict(orient="records")
+        records = result.to_dict(orient="records")
+        logger.debug("get_transfers_for_date returning %s records", len(records))
+        return records
 
     @tool
     def get_emergency_receipts():
         """Return emergency receipts."""
+        logger.debug("get_emergency_receipts invoked")
         df = load_inventory(config)
         emergency = df[df["notes"].str.contains("Emergency", na=False)]
-        return emergency.to_dict(orient="records")
+        records = emergency.to_dict(orient="records")
+        logger.debug("get_emergency_receipts returning %s records", len(records))
+        return records
 
     @tool
     def get_inventory_data():
         """Return inventory movements as list of dicts."""
+        logger.debug("get_inventory_data invoked")
         df = load_inventory(config)
-        return df.to_dict(orient="records")
+        records = df.to_dict(orient="records")
+        logger.debug("get_inventory_data returning %s records", len(records))
+        return records
 
     return [
         get_unique_stores,
