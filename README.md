@@ -21,9 +21,13 @@ The system autonomously:
 
 ```
 .
+├── RCA.ipynb
+├── Root_Cause_Analysis_Report.txt
 ├── data/
 │   ├── inventory_transactions.csv
 │   └── sales_transactions.csv
+├── inventory_transactions.csv
+├── sales_transactions.csv
 ├── src/
 │   └── rca_app/
 │       ├── app.py
@@ -40,6 +44,7 @@ The system autonomously:
 │       ├── tools_inventory.py
 │       ├── tools_sales.py
 │       └── utils.py
+├── traces.txt
 ├── pyproject.toml
 └── requirements.txt
 ```
@@ -91,6 +96,23 @@ export RCA_MCP_SAP_URL="http://localhost:8700"
 ```
 
 ## Usage
+
+### Quick start
+
+1. Install dependencies and configure Azure OpenAI as shown above.
+2. (Optional) Point `RCA_DATA_DIR` to a folder that contains
+   `inventory_transactions.csv` and `sales_transactions.csv`.
+3. Run the interactive agent:
+
+```bash
+rca-app chat
+```
+
+4. Ask a question such as:
+
+```
+Investigate why stores are experiencing stockouts during an active promotion.
+```
 
 ### Interactive chat
 
