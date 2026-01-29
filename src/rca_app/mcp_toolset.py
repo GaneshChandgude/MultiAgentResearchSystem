@@ -34,10 +34,33 @@ def _load_mcp_client() -> tuple[Any, Any]:
             "Missing 'mcp' dependency. Install it with `pip install mcp` "
             "or add it to your environment before using MCP toolsets."
         )
-    from mcp.client import ClientSession
-    from mcp.client.sse import sse_client
+    client_module = importlib.import_module("mcp.client")
+    client_session = getattr(client_module, "ClientSession", None)
 
-    return ClientSession, sse_client
+    if client_session is None and importlib.util.find_spec("mcp.client.session") is not None:
+        session_module = importlib.import_module("mcp.client.session")
+        client_session = getattr(session_module, "ClientSession", None)
+
+    if client_session is None:
+        raise ImportError(
+            "Unable to locate ClientSession in the installed 'mcp' package. "
+            "Please verify the MCP client package version."
+        )
+
+    if importlib.util.find_spec("mcp.client.sse") is None:
+        raise ImportError(
+            "Unable to locate the MCP SSE client in the installed 'mcp' package. "
+            "Please verify the MCP client package version."
+        )
+    sse_module = importlib.import_module("mcp.client.sse")
+    sse_client = getattr(sse_module, "sse_client", None)
+    if sse_client is None:
+        raise ImportError(
+            "Unable to locate sse_client in the installed 'mcp' package. "
+            "Please verify the MCP client package version."
+        )
+
+    return client_session, sse_client
 
 
 def _tool_field(tool_info: Any, field: str, fallback: str | None = None) -> Any:
