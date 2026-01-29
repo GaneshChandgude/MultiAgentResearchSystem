@@ -145,12 +145,12 @@ def main(argv: list[str] | None = None):
     subparsers.add_parser("chat", help="Start interactive RCA chat")
     subparsers.add_parser("inspect-memory", help="Inspect stored memory")
     salesforce_parser = subparsers.add_parser(
-        "mcp-salesforce", help="Run Salesforce MCP SSE server"
+        "mcp-salesforce", help="Run Sales MCP SSE server"
     )
     salesforce_parser.add_argument("--host", default="0.0.0.0")
     salesforce_parser.add_argument("--port", type=int, default=8600)
     sap_parser = subparsers.add_parser(
-        "mcp-sap", help="Run SAP Business One MCP SSE server"
+        "mcp-sap", help="Run Inventory MCP SSE server"
     )
     sap_parser.add_argument("--host", default="0.0.0.0")
     sap_parser.add_argument("--port", type=int, default=8700)
