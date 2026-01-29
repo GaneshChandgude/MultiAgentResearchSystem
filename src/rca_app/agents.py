@@ -254,7 +254,9 @@ Hypotheses: {sales_related_hypotheses}
 def build_inventory_analysis_tool(
     config: AppConfig, store, checkpointer, llm, inventory_tools, promo_tool
 ):
-    inventory_tools = [promo_tool] + list(inventory_tools)
+    inventory_tools = list(inventory_tools)
+    if promo_tool is not None:
+        inventory_tools = [promo_tool] + inventory_tools
     inventory_tools += [
         create_manage_memory_tool(namespace=("inventory", "{user_id}")),
         create_search_memory_tool(namespace=("inventory", "{user_id}")),
@@ -856,7 +858,10 @@ def build_agents(config: AppConfig, store, checkpointer):
     sales_tool, sales_tools = build_sales_analysis_tool(
         config, store, checkpointer, llm, salesforce_toolset.tools
     )
-    promo_tool = tool_registry.find_tool("get_promo_period")
+    try:
+        promo_tool = tool_registry.find_tool("get_promo_period")
+    except KeyError:
+        promo_tool = None
     inventory_tool = build_inventory_analysis_tool(
         config, store, checkpointer, llm, sap_toolset.tools, promo_tool
     )
