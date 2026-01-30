@@ -235,6 +235,92 @@ Tone:
 Analytical, data-driven, formal, concise.
 """.strip()
 
+MEMORY_REFLECTION_PROMPT = """
+You are analyzing conversations from a supply-chain Root Cause Analysis (RCA) assistant to create episodic memories that will improve future RCA interactions.
+
+Your task is to extract the most useful, reusable insights from the conversation that would help when handling similar RCA scenarios in the future.
+
+Review the conversation and create a memory reflection following these rules:
+
+1. For any field where information is missing or not applicable, use "N/A"
+2. Be extremely concise — each string must be one clear, actionable sentence
+3. Focus only on information that improves future RCA effectiveness
+4. Context_tags must be specific enough to match similar RCA situations but general enough to be reusable
+
+Output valid JSON in exactly this format:
+{{
+    "context_tags": [               // 2–4 keywords identifying similar RCA scenarios
+        string,                     // Use domain-specific terms like "sales_decline", "inventory_stockout", "logistics_delay", "forecast_bias"
+        ...
+    ],
+    "conversation_summary": string, // One sentence describing what RCA problem was addressed and resolved
+    "what_worked": string,          // Most effective RCA technique or reasoning strategy used
+    "what_to_avoid": string         // Key RCA pitfall or ineffective approach to avoid in future
+}}
+
+Do not include any text outside the JSON object in your response.
+
+Here is the prior conversation:
+
+{conversation}
+""".strip()
+
+PROCEDURAL_REFLECTION_PROMPT = """
+You are extracting PROCEDURAL MEMORY for an RCA agent.
+
+Focus ONLY on reusable process knowledge.
+
+Extract:
+1. When to use which agent
+2. Ordering of analysis steps
+3. Tool usage heuristics
+4. Decision rules
+
+Output JSON:
+{{
+  "procedure_name": "string",
+  "applicable_when": "string",
+  "steps": ["step1", "step2", "..."],
+  "tool_heuristics": ["rule1", "rule2"]
+}}
+Conversation:
+{conversation}
+""".strip()
+
+SEMANTIC_ABSTRACTION_PROMPT = """
+You are building SEMANTIC MEMORY for an RCA agent.
+
+Given multiple episodic RCA reflections, extract generalized,
+reusable knowledge that holds across cases.
+
+Rules:
+- Do NOT mention specific dates, stores, or conversations
+- Focus on patterns, causal relationships, and general truths
+- One semantic fact should apply to many future RCA cases
+
+Output ONLY valid JSON in this format:
+{{
+  "semantic_fact": "string",
+  "applicable_context": ["keyword1", "keyword2"],
+  "confidence": "low | medium | high"
+}}
+
+Episodic memories:
+{episodes}
+""".strip()
+
+JSON_DECODER_PROMPT = """
+You are an expert in resolving JSON decoding errors.
+
+Please review the AI Output (enclosed in triple backticks).
+
+We encountered the following error while loading the AI Output into a JSON object: {e}. Kindly resolve this issue.
+
+AI Output: '''{response}'''
+
+Return ONLY the corrected JSON.
+""".strip()
+
 
 PROMPT_DEFINITIONS: Dict[str, str] = {
     "rca.orchestration.system": ORCHESTRATION_AGENT_PROMPT,
@@ -244,6 +330,10 @@ PROMPT_DEFINITIONS: Dict[str, str] = {
     "rca.validation.system": VALIDATION_AGENT_PROMPT,
     "rca.root_cause.system": ROOT_CAUSE_AGENT_PROMPT,
     "rca.report.system": REPORT_AGENT_PROMPT,
+    "rca.memory_reflection.system": MEMORY_REFLECTION_PROMPT,
+    "rca.procedural_reflection.system": PROCEDURAL_REFLECTION_PROMPT,
+    "rca.semantic_abstraction.system": SEMANTIC_ABSTRACTION_PROMPT,
+    "rca.json_recovery.system": JSON_DECODER_PROMPT,
 }
 
 
@@ -349,6 +439,24 @@ def render_prompt(
         logger.warning("Prompt rendering failed for %s: %s; falling back", name, exc)
 
     return fallback.format(**variables)
+
+
+def get_prompt_template(
+    config: AppConfig,
+    name: str,
+    fallback: str,
+    label: str | None = None,
+) -> str:
+    template = fallback
+    if _langfuse_prompt_enabled(config):
+        response = fetch_langfuse_prompt(
+            config, name=name, label=label or config.langfuse_prompt_label
+        )
+        if response:
+            template = response.prompt
+            logger.debug("Using Langfuse prompt %s (label=%s)", name, response.label)
+
+    return template
 
 
 def ensure_langfuse_prompt(

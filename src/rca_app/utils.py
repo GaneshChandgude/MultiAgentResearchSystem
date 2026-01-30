@@ -9,6 +9,9 @@ from langchain.agents.middleware import wrap_tool_call
 from langchain.messages import ToolMessage
 from langchain_core.messages import AIMessage
 
+from .config import AppConfig
+from .langfuse_prompts import PROMPT_DEFINITIONS, render_prompt
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,18 +31,8 @@ def extract_json_from_response(response_text: str) -> str:
     return response_text.strip()
 
 
-def process_response(response_content: str, llm=None) -> Dict[str, Any]:
-    json_decoder_prompt = """
-You are an expert in resolving JSON decoding errors.
-
-Please review the AI Output (enclosed in triple backticks).
-
-We encountered the following error while loading the AI Output into a JSON object: {e}. Kindly resolve this issue.
-
-AI Output: '''{response}'''
-
-Return ONLY the corrected JSON.
-"""
+def process_response(response_content: str, llm=None, app_config: AppConfig | None = None) -> Dict[str, Any]:
+    json_decoder_prompt = PROMPT_DEFINITIONS["rca.json_recovery.system"]
 
     last_exception = None
     logger.debug("Processing LLM response content length=%s", len(response_content))
@@ -58,9 +51,15 @@ Return ONLY the corrected JSON.
             logger.debug("JSON decode failed on attempt %s: %s", attempt, e)
             if llm is None:
                 break
+            prompt_content = render_prompt(
+                app_config,
+                name="rca.json_recovery.system",
+                fallback=json_decoder_prompt,
+                variables={"e": str(e), "response": response_content},
+            ) if app_config else json_decoder_prompt.format(e=str(e), response=response_content)
             recovery_prompt = {
                 "role": "system",
-                "content": json_decoder_prompt.format(e=str(e), response=response_content),
+                "content": prompt_content,
             }
             fixed_response = llm.invoke([recovery_prompt])
             response_content = fixed_response.content
