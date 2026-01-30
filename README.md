@@ -1,6 +1,8 @@
 # Autonomous Root Cause Analysis Agent for Retail Operations
 
-AI-powered multi-agent Root Cause Analysis (RCA) system for detecting and explaining stockouts in retail & supply-chain using LangGraph, LangChain, and ReAct Agents.
+AI-powered multi-agent Root Cause Analysis (RCA) system for detecting and explaining
+stockouts in retail & supply-chain scenarios using LangGraph, LangChain, and ReAct
+agents.
 
 ## What this project does
 
@@ -17,6 +19,13 @@ The system autonomously:
 4. Converges on root causes
 5. Produces an explainable RCA report
 
+## Key capabilities
+
+- **Multi-agent RCA workflow** orchestrated with LangGraph and LangChain.
+- **Data-driven analysis** using Pandas for sales and inventory transactions.
+- **Toolset integration** via MCP servers for Salesforce (sales) and SAP Business One (inventory).
+- **Memory and observability** with LangMem and optional Langfuse tracing.
+
 ## Project layout
 
 ```
@@ -30,19 +39,26 @@ The system autonomously:
 ├── sales_transactions.csv
 ├── src/
 │   └── rca_app/
-│       ├── app.py
+│       ├── __main__.py
 │       ├── agents.py
+│       ├── app.py
 │       ├── cli.py
 │       ├── config.py
 │       ├── data.py
 │       ├── evaluation.py
-│       ├── local_toolsets.py
+│       ├── inventory_mcp_server.py
+│       ├── langfuse_prompts.py
+│       ├── llm.py
+│       ├── mcp_servers.py
+│       ├── mcp_toolset.py
 │       ├── memory.py
 │       ├── memory_reflection.py
-│       ├── mcp_toolset.py
+│       ├── observability.py
+│       ├── persistent_store.py
+│       ├── sales_mcp_server.py
 │       ├── toolset_registry.py
-│       ├── tools_inventory.py
-│       ├── tools_sales.py
+│       ├── toolsets.py
+│       ├── types.py
 │       └── utils.py
 ├── traces.txt
 ├── pyproject.toml
@@ -75,7 +91,8 @@ export AZURE_OPENAI_EMBEDDINGS_API_KEY="$AZURE_OPENAI_API_KEY"
 export AZURE_OPENAI_EMBEDDINGS_API_VERSION="2023-05-15"
 ```
 
-3. **(Optional) Point to a custom data directory** if you want to use your own CSVs:
+3. **(Optional) Point to a custom data directory** if you want to use your own CSVs
+   (defaults to the repo's `data/` directory):
 
 ```bash
 export RCA_DATA_DIR="/absolute/path/to/data"
@@ -86,6 +103,7 @@ export RCA_DATA_DIR="/absolute/path/to/data"
 ```bash
 export RCA_LOG_FILE="/absolute/path/to/rca_app.log"
 export RCA_LOG_LEVEL="INFO" # Use DEBUG for detailed tracing
+export RCA_LOG_TO_CONSOLE="true"
 ```
 
 5. **Configure MCP toolset endpoints** for Salesforce and SAP:
@@ -106,6 +124,13 @@ export LANGFUSE_HOST="https://cloud.langfuse.com" # or self-hosted URL
 # Optional metadata
 export LANGFUSE_RELEASE="rca-app@1.0.0"
 export LANGFUSE_DEBUG="false"
+```
+
+7. **(Optional) Enable Langfuse prompt management** to sync prompts from this repo:
+
+```bash
+export LANGFUSE_PROMPT_ENABLED="true"
+export LANGFUSE_PROMPT_LABEL="production"
 ```
 
 ## Usage
@@ -156,6 +181,23 @@ rca-app mcp-sap --host 0.0.0.0 --port 8700
 
 When running the agent, point `RCA_MCP_SALESFORCE_URL` and `RCA_MCP_SAP_URL` to the
 servers above so the agent resolves tools remotely.
+
+### Analyze data in the notebook (optional)
+
+Open the notebook to explore RCA analysis steps and data summaries:
+
+```bash
+jupyter notebook RCA.ipynb
+```
+
+### Sync Langfuse prompt definitions (optional)
+
+If Langfuse prompt management is enabled, you can create or update prompt templates
+in Langfuse:
+
+```bash
+rca-app sync-langfuse-prompts
+```
 
 ## Architecture overview
 
