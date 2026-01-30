@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import logging
 from typing import Any, Dict
 
+from langchain_core.runnables import config as runnable_config
 from langgraph.graph import StateGraph
 
 from .agents import build_agents, orchestration_agent
@@ -35,7 +36,9 @@ def build_app(config: AppConfig) -> RCAApp:
     llm = agents["llm"]
 
     graph = StateGraph(RCAState)
-    def run_orchestration(rca_state, runtime_config):
+    def run_orchestration(rca_state, runtime_config=None):
+        if runtime_config is None:
+            runtime_config = runnable_config.ensure_config()
         return orchestration_agent(
             rca_state,
             runtime_config,
