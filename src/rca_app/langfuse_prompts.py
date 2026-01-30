@@ -391,6 +391,12 @@ def _extract_prompt_text(payload: Mapping[str, Any]) -> str | None:
         prompt_value = payload["prompt"]
         if isinstance(prompt_value, str):
             return prompt_value
+        if isinstance(prompt_value, list):
+            for entry in prompt_value:
+                if isinstance(entry, Mapping):
+                    content = entry.get("content")
+                    if isinstance(content, str):
+                        return content
         if isinstance(prompt_value, Mapping) and isinstance(prompt_value.get("prompt"), str):
             return prompt_value["prompt"]
     if "data" in payload and isinstance(payload["data"], Mapping):
@@ -512,7 +518,12 @@ def ensure_langfuse_prompt(
     headers = _basic_auth_header(config.langfuse_public_key, config.langfuse_secret_key)
     verify = _langfuse_verify_setting(config)
     _maybe_disable_insecure_request_warnings(config)
-    payload: Dict[str, Any] = {"name": name, "prompt": prompt}
+    payload: Dict[str, Any] = {
+        "name": name,
+        "type": "chat",
+        "prompt": [{"role": "system", "content": prompt}],
+        "isActive": True,
+    }
     if label:
         payload["labels"] = [label]
 
