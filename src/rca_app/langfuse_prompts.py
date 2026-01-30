@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import base64
 import logging
+import warnings
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping
 
 import requests
+from urllib3.exceptions import InsecureRequestWarning
 
 from .config import AppConfig
 
@@ -364,6 +366,26 @@ def _langfuse_verify_setting(config: AppConfig) -> bool | str:
     return config.langfuse_verify_ssl
 
 
+def _maybe_disable_insecure_request_warnings(config: AppConfig) -> None:
+    if _langfuse_verify_setting(config) is False:
+        warnings.filterwarnings("ignore", category=InsecureRequestWarning)
+
+
+def _log_ssl_help(exc: Exception, config: AppConfig, action: str) -> None:
+    if not isinstance(exc, requests.exceptions.SSLError):
+        return
+    verify_setting = _langfuse_verify_setting(config)
+    logger.error(
+        "Langfuse %s failed due to SSL verification error. "
+        "Set LANGFUSE_VERIFY_SSL=false to disable verification or "
+        "set LANGFUSE_CA_BUNDLE to a PEM file that trusts your Langfuse host. "
+        "Current verify setting=%s host=%s.",
+        action,
+        verify_setting,
+        config.langfuse_host,
+    )
+
+
 def _extract_prompt_text(payload: Mapping[str, Any]) -> str | None:
     if "prompt" in payload:
         prompt_value = payload["prompt"]
@@ -389,12 +411,14 @@ def fetch_langfuse_prompt(
     params = {"label": label} if label else None
     headers = _basic_auth_header(config.langfuse_public_key, config.langfuse_secret_key)
     verify = _langfuse_verify_setting(config)
+    _maybe_disable_insecure_request_warnings(config)
 
     try:
         response = requests.get(
             url, headers=headers, params=params, timeout=timeout_s, verify=verify
         )
     except requests.RequestException as exc:
+        _log_ssl_help(exc, config, "prompt fetch")
         logger.warning("Failed to reach Langfuse prompt API for %s: %s", name, exc)
         return None
 
@@ -487,6 +511,7 @@ def ensure_langfuse_prompt(
     url = f"{config.langfuse_host.rstrip('/')}/api/public/prompts"
     headers = _basic_auth_header(config.langfuse_public_key, config.langfuse_secret_key)
     verify = _langfuse_verify_setting(config)
+    _maybe_disable_insecure_request_warnings(config)
     payload: Dict[str, Any] = {"name": name, "prompt": prompt}
     if label:
         payload["labels"] = [label]
@@ -496,6 +521,7 @@ def ensure_langfuse_prompt(
             url, headers=headers, json=payload, timeout=timeout_s, verify=verify
         )
     except requests.RequestException as exc:
+        _log_ssl_help(exc, config, "prompt create")
         logger.warning("Failed to create Langfuse prompt %s: %s", name, exc)
         return False
 
