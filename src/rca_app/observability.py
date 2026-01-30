@@ -49,6 +49,29 @@ def build_langfuse_callbacks(
     return [CallbackHandler(**handler_kwargs)]
 
 
+def build_langfuse_client(config: AppConfig):
+    if not config.langfuse_enabled:
+        return None
+    if not config.langfuse_public_key or not config.langfuse_secret_key:
+        logger.warning("Langfuse enabled but keys are missing; skipping client.")
+        return None
+    if not importlib.util.find_spec("langfuse"):
+        logger.warning("Langfuse enabled but package is not installed; skipping client.")
+        return None
+
+    from langfuse import Langfuse
+
+    client_kwargs: Dict[str, Any] = {
+        "public_key": config.langfuse_public_key,
+        "secret_key": config.langfuse_secret_key,
+        "host": config.langfuse_host,
+        "debug": config.langfuse_debug,
+    }
+    if config.langfuse_release:
+        client_kwargs["release"] = config.langfuse_release
+    return Langfuse(**client_kwargs)
+
+
 def build_langfuse_invoke_config(
     config: AppConfig,
     user_id: str | None = None,
