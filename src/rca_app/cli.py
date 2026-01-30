@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import json
 import logging
 import os
@@ -189,6 +190,17 @@ def main(argv: list[str] | None = None):
         return 0
     if args.command == "sync-langfuse-prompts":
         config = load_config()
+        if not config.langfuse_public_key or not config.langfuse_secret_key:
+            print(
+                "Langfuse prompt sync requires LANGFUSE_PUBLIC_KEY and "
+                "LANGFUSE_SECRET_KEY to be set."
+            )
+            return 1
+        if not config.langfuse_prompt_enabled:
+            logger.info(
+                "Langfuse prompt management disabled; enabling for prompt sync."
+            )
+            config = replace(config, langfuse_prompt_enabled=True)
         synced = sync_prompt_definitions(config, label=args.label or config.langfuse_prompt_label)
         print(f"Synced {synced} Langfuse prompts.")
         return 0
