@@ -92,7 +92,7 @@ def build_hypothesis_tool(config: AppConfig, store, checkpointer, llm):
 
         result = hypothesis_react_agent.invoke({"messages": messages}, tool_config)
         final_msg = result["messages"][-1].content
-        output = process_response(final_msg, llm=llm)
+        output = process_response(final_msg, llm=llm, app_config=config)
 
         hypotheses: List[str] = output.get("hypotheses", [])
         logger.debug("Hypothesis tool produced %s hypotheses", len(hypotheses))
@@ -223,7 +223,7 @@ Hypotheses: {sales_related_hypotheses}
         }
         result = sales_react_agent.invoke({"messages": messages}, tool_config)
         final_msg = result["messages"][-1].content
-        output = process_response(final_msg, llm=llm)
+        output = process_response(final_msg, llm=llm, app_config=config)
         sales_insights = output.get("sales_insights")
         logger.debug("Sales analysis produced insights keys=%s", list(sales_insights or {}))
 
@@ -351,7 +351,7 @@ Hypotheses to validate: {inventory_related_hypotheses}
         }
         result = inventory_react_agent.invoke({"messages": messages}, tool_config)
         final_msg = result["messages"][-1].content
-        output = process_response(final_msg, llm=llm)
+        output = process_response(final_msg, llm=llm, app_config=config)
         inventory_insights = output.get("inventory_insights")
         logger.debug("Inventory analysis produced insights keys=%s", list(inventory_insights or {}))
 
@@ -463,7 +463,7 @@ Inventory insights:
         }
         result = validation_react_agent.invoke({"messages": messages}, tool_config)
         final_msg = result["messages"][-1].content
-        resp = process_response(final_msg, llm=llm)
+        resp = process_response(final_msg, llm=llm, app_config=config)
         logger.debug("Validation tool returned validated keys=%s", list((resp.get("validated") or {}).keys()))
 
         internal_msgs = result["messages"][2:-1]
@@ -571,7 +571,7 @@ Prior trace:
         }
         result = root_cause_react_agent.invoke({"messages": messages}, tool_config)
         final_msg = result["messages"][-1].content
-        resp = process_response(final_msg, llm=llm)
+        resp = process_response(final_msg, llm=llm, app_config=config)
         root_cause = resp.get("root_cause")
         reasoning = resp.get("reasoning")
         logger.debug("Root cause tool generated root_cause=%s reasoning=%s", bool(root_cause), bool(reasoning))
