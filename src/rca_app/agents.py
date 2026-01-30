@@ -189,30 +189,14 @@ def build_sales_analysis_tool(config: AppConfig, store, checkpointer, llm, sales
         if not sales_related_hypotheses:
             sales_related_hypotheses = hypotheses
 
+        system_prompt = render_prompt(
+            config,
+            name="rca.sales.system",
+            fallback=PROMPT_DEFINITIONS["rca.sales.system"],
+            variables={"memory_context": memory_context},
+        )
         messages = [
-            {
-                "role": "system",
-                "content": f"""
-You are a Sales Analysis Agent for RCA.
-
-Context (do not repeat, only use for reasoning):
-{memory_context}
-
-Your responsibilities:
-- Use available tools to analyze sales patterns
-- Validate or refute sales-related hypotheses
-
-STRICT OUTPUT RULES:
-1. Output ONLY valid JSON
-2. Root JSON object MUST contain EXACTLY ONE key: "sales_insights"
-3. NO extra keys, commentary, or markdown
-
-JSON schema:
-{{
-  "sales_insights": {{...}}
-}}
-""",
-            },
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": f"""
@@ -333,31 +317,14 @@ def build_inventory_analysis_tool(
         if not inventory_related_hypotheses:
             inventory_related_hypotheses = hypotheses
 
+        system_prompt = render_prompt(
+            config,
+            name="rca.inventory.system",
+            fallback=PROMPT_DEFINITIONS["rca.inventory.system"],
+            variables={"memory_context": memory_context},
+        )
         messages = [
-            {
-                "role": "system",
-                "content": f"""
-You are the Inventory RCA Agent.
-
-Context (do not repeat, only use for reasoning):
-{memory_context}
-
-Your responsibilities:
-- Analyze inventory levels, movements, transfers, adjustments, and replenishments
-- Use available tools via a ReAct loop
-- Produce structured insights
-
-STRICT OUTPUT RULES:
-1. Output ONLY valid JSON
-2. Root JSON object MUST contain EXACTLY ONE key: "inventory_insights"
-3. NO extra keys, markdown, or commentary
-
-JSON schema:
-{{
-  "inventory_insights": {{...}}
-}}
-""",
-            },
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": f"""
@@ -456,24 +423,14 @@ def build_validation_tool(config: AppConfig, store, checkpointer, llm):
             query_id,
             len(hypotheses),
         )
+        system_prompt = render_prompt(
+            config,
+            name="rca.validation.system",
+            fallback=PROMPT_DEFINITIONS["rca.validation.system"],
+            variables={},
+        )
         messages = [
-            {
-                "role": "system",
-                "content": """
-Validate each hypothesis using sales and inventory insights.
-
-STRICT OUTPUT RULES:
-1. Output ONLY valid JSON
-2. No markdown or code fences
-3. No extra fields or commentary
-
-JSON schema:
-{
-  "validated": { "hypothesis": true | false },
-  "reasoning": { "hypothesis": "explanation" }
-}
-""",
-            },
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": f"""
@@ -571,52 +528,14 @@ def build_root_cause_tool(config: AppConfig, store, checkpointer, llm):
             query_id,
             len(validated_hypotheses),
         )
+        system_prompt = render_prompt(
+            config,
+            name="rca.root_cause.system",
+            fallback=PROMPT_DEFINITIONS["rca.root_cause.system"],
+            variables={},
+        )
         messages = [
-            {
-                "role": "system",
-                "content": """
-Produce a final Root Cause Analysis.
-
-Include:
-- primary root causes
-- supporting evidence
-- contributing factors
-- timeline
-- recommendations
-
-STRICT OUTPUT RULES:
-1. Output ONLY valid JSON
-2. No markdown or code fences
-3. No extra commentary
-4. JSON MUST contain EXACTLY two top-level keys:
-   - "root_cause"
-   - "reasoning"
-
-JSON schema:
-{
-  "root_cause": {
-    "primary_root_causes": ["string"],
-    "supporting_evidence": {
-      "sales": {},
-      "inventory": {},
-      "cross_analysis": {}
-    },
-    "contributing_factors": ["string"],
-    "timeline": [
-      { "date": "YYYY-MM-DD", "event": "string" }
-    ],
-    "recommendations": ["string"]
-  },
-  "reasoning": {
-    "primary_root_causes": "explanation",
-    "contributing_factors": "explanation",
-    "supporting_evidence": "explanation",
-    "timeline": "explanation",
-    "recommendations": "explanation"
-  }
-}
-""",
-            },
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": f"""
@@ -709,39 +628,14 @@ def build_report_tool(config: AppConfig, store, checkpointer, llm):
             user_id,
             query_id,
         )
+        system_prompt = render_prompt(
+            config,
+            name="rca.report.system",
+            fallback=PROMPT_DEFINITIONS["rca.report.system"],
+            variables={},
+        )
         report_messages = [
-            {
-                "role": "system",
-                "content": """
-You are an expert supply chain and demand planning analyst.
-
-Create a professional Root Cause Analysis Report.
-
-Audience:
-- Demand Planning
-- Inventory Management
-- Supply Chain Teams
-
-Requirements:
-- Clear structured sections
-- Bullet points where appropriate
-- No JSON, no code
-- Pure narrative report
-
-The report MUST include:
-- Executive Summary
-- Primary Root Cause(s)
-- Supporting Evidence
-- Contributing Factors
-- Key Data Points
-- Timeline of Events
-- Recommendations
-- Final Conclusion
-
-Tone:
-Analytical, data-driven, formal, concise.
-""",
-            },
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": f"""
