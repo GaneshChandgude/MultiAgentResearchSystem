@@ -4,7 +4,8 @@ from dataclasses import dataclass
 import logging
 from typing import Any, Dict, List
 
-from .app import RCAApp, run_rca
+from .app import RCAApp
+from .observability import build_langfuse_client, build_langfuse_invoke_config
 
 logger = logging.getLogger(__name__)
 
@@ -202,11 +203,70 @@ def extract_validated(result: Dict[str, Any]) -> Dict[str, Any]:
     return {}
 
 
-def run_rca_with_memory(app: RCAApp, task: str) -> Dict[str, Any]:
-    config = {"configurable": {"user_id": "eval_user", "thread_id": "eval_thread", "memory_enabled": True}}
-    rca_state = {"task": task, "output": "", "trace": []}
+def build_eval_tags(prompt_label: str, run_label: str) -> List[str]:
+    tags = ["eval", run_label]
+    if prompt_label:
+        tags.append(f"prompt_label:{prompt_label}")
+    return tags
+
+
+def build_eval_metadata(case_id: str, prompt_label: str, memory_enabled: bool | None) -> Dict[str, Any]:
+    metadata = {
+        "entrypoint": "evaluation",
+        "eval_case": case_id,
+    }
+    if memory_enabled is not None:
+        metadata["memory_enabled"] = memory_enabled
+    if prompt_label:
+        metadata["prompt_label"] = prompt_label
+    return metadata
+
+
+def log_eval_scores(
+    app: RCAApp,
+    scores: EvalScores,
+    case_id: str,
+    run_label: str,
+    session_id: str,
+    memory_enabled: bool | None,
+) -> None:
+    client = build_langfuse_client(app.config)
+    if not client:
+        return
+
+    metadata = build_eval_metadata(case_id, app.config.langfuse_prompt_label, memory_enabled)
+    score_map = {
+        "precision": (scores.precision, "NUMERIC"),
+        "recall": (scores.recall, "NUMERIC"),
+        "hypothesis_coverage": (scores.hypothesis_coverage, "NUMERIC"),
+        "evidence_score": (scores.evidence_score, "NUMERIC"),
+        "process_compliance": (scores.process_compliance, "BOOLEAN"),
+        "forbidden_penalty": (scores.forbidden_penalty, "BOOLEAN"),
+    }
+    for metric, (value, data_type) in score_map.items():
+        client.create_score(
+            name=f"eval_{run_label}_{metric}",
+            value=value,
+            data_type=data_type,
+            session_id=session_id,
+            metadata=metadata,
+        )
+    client.flush()
+
+
+def run_rca_with_memory(app: RCAApp, case: GoldRCACase) -> Dict[str, Any]:
+    query_id = f"eval_{case.case_id}_with_memory"
+    config = {"configurable": {"user_id": "eval_user", "thread_id": query_id, "memory_enabled": True}}
+    rca_state = {"task": case.task, "output": "", "trace": []}
+    observability_config = build_langfuse_invoke_config(
+        app.config,
+        user_id="eval_user",
+        query_id=query_id,
+        tags=build_eval_tags(app.config.langfuse_prompt_label, "with_memory"),
+        metadata=build_eval_metadata(case.case_id, app.config.langfuse_prompt_label, True),
+    )
     logger.info("Running RCA evaluation with memory")
-    result = app.app.invoke(rca_state, config)
+    result = app.app.invoke(rca_state, {**config, **observability_config})
     normalized_trace = normalize_trace(result.get("trace"))
     return {
         "root_cause": extract_root_cause({"trace": normalized_trace}),
@@ -216,13 +276,21 @@ def run_rca_with_memory(app: RCAApp, task: str) -> Dict[str, Any]:
     }
 
 
-def run_rca_without_memory(app: RCAApp, task: str) -> Dict[str, Any]:
+def run_rca_without_memory(app: RCAApp, case: GoldRCACase) -> Dict[str, Any]:
+    query_id = f"eval_{case.case_id}_without_memory"
     config = {
-        "configurable": {"user_id": "eval_user_nomem", "thread_id": "eval_thread_nomem", "memory_enabled": False}
+        "configurable": {"user_id": "eval_user_nomem", "thread_id": query_id, "memory_enabled": False}
     }
-    empty_state = {"task": task, "output": "", "trace": []}
+    empty_state = {"task": case.task, "output": "", "trace": []}
+    observability_config = build_langfuse_invoke_config(
+        app.config,
+        user_id="eval_user_nomem",
+        query_id=query_id,
+        tags=build_eval_tags(app.config.langfuse_prompt_label, "without_memory"),
+        metadata=build_eval_metadata(case.case_id, app.config.langfuse_prompt_label, False),
+    )
     logger.info("Running RCA evaluation without memory")
-    result = app.app.invoke(empty_state, config)
+    result = app.app.invoke(empty_state, {**config, **observability_config})
     return {
         "root_cause": extract_root_cause(result),
         "hypotheses": extract_hypotheses(result),
@@ -232,18 +300,47 @@ def run_rca_without_memory(app: RCAApp, task: str) -> Dict[str, Any]:
 
 
 def run_memory_ablation(app: RCAApp, case: GoldRCACase) -> Dict[str, EvalScores]:
-    out_mem = run_rca_with_memory(app, case.task)
-    out_nomem = run_rca_without_memory(app, case.task)
+    out_mem = run_rca_with_memory(app, case)
+    out_nomem = run_rca_without_memory(app, case)
+    with_memory_scores = evaluate_single_case(case, out_mem)
+    without_memory_scores = evaluate_single_case(case, out_nomem)
+    log_eval_scores(
+        app,
+        with_memory_scores,
+        case.case_id,
+        "with_memory",
+        f"eval_{case.case_id}_with_memory",
+        True,
+    )
+    log_eval_scores(
+        app,
+        without_memory_scores,
+        case.case_id,
+        "without_memory",
+        f"eval_{case.case_id}_without_memory",
+        False,
+    )
     return {
-        "with_memory": evaluate_single_case(case, out_mem),
-        "without_memory": evaluate_single_case(case, out_nomem),
+        "with_memory": with_memory_scores,
+        "without_memory": without_memory_scores,
     }
 
 
 def learning_curve(app: RCAApp, cases: List[GoldRCACase]) -> List[float]:
     recalls = []
     for c in cases:
-        out = run_rca(app, c.task, user_id="eval_user", query_id="eval_thread")
+        query_id = f"eval_{c.case_id}_learning_curve"
+        config = {"configurable": {"user_id": "eval_user", "thread_id": query_id}}
+        observability_config = build_langfuse_invoke_config(
+            app.config,
+            user_id="eval_user",
+            query_id=query_id,
+            tags=build_eval_tags(app.config.langfuse_prompt_label, "learning_curve"),
+            metadata=build_eval_metadata(c.case_id, app.config.langfuse_prompt_label, None),
+        )
+        rca_state = {"task": c.task, "output": "", "trace": []}
+        out = app.app.invoke(rca_state, {**config, **observability_config})
         score = evaluate_single_case(c, out)
         recalls.append(score.recall)
+        log_eval_scores(app, score, c.case_id, "learning_curve", query_id, None)
     return recalls
