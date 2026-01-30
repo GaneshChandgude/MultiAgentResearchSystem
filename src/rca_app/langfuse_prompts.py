@@ -347,6 +347,14 @@ class LangfusePromptResponse:
 
 
 def _langfuse_prompt_enabled(config: AppConfig) -> bool:
+    if not isinstance(config, AppConfig):
+        logger.warning(
+            "Langfuse prompt management disabled because config is not an AppConfig. "
+            "Received type=%s.",
+            type(config).__name__,
+        )
+        return False
+
     return (
         config.langfuse_prompt_enabled
         and config.langfuse_public_key
