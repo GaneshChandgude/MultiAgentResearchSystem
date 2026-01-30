@@ -26,6 +26,8 @@ class AppConfig:
     langfuse_debug: bool
     langfuse_prompt_enabled: bool
     langfuse_prompt_label: str
+    langfuse_verify_ssl: bool
+    langfuse_ca_bundle: str
 
 
 DEFAULT_AZURE_API_VERSION = "2024-12-01-preview"
@@ -61,6 +63,13 @@ def load_config() -> AppConfig:
     else:
         prompt_enabled = langfuse_enabled
     langfuse_prompt_label = os.getenv("LANGFUSE_PROMPT_LABEL", "production").strip()
+    langfuse_verify_ssl = os.getenv("LANGFUSE_VERIFY_SSL", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    langfuse_ca_bundle = os.getenv("LANGFUSE_CA_BUNDLE", "").strip()
 
     return AppConfig(
         azure_openai_endpoint=endpoint,
@@ -82,4 +91,6 @@ def load_config() -> AppConfig:
         langfuse_debug=langfuse_debug,
         langfuse_prompt_enabled=prompt_enabled,
         langfuse_prompt_label=langfuse_prompt_label,
+        langfuse_verify_ssl=langfuse_verify_ssl,
+        langfuse_ca_bundle=langfuse_ca_bundle,
     )

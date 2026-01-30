@@ -358,6 +358,12 @@ def _basic_auth_header(public_key: str, secret_key: str) -> Dict[str, str]:
     return {"Authorization": f"Basic {encoded}"}
 
 
+def _langfuse_verify_setting(config: AppConfig) -> bool | str:
+    if config.langfuse_ca_bundle:
+        return config.langfuse_ca_bundle
+    return config.langfuse_verify_ssl
+
+
 def _extract_prompt_text(payload: Mapping[str, Any]) -> str | None:
     if "prompt" in payload:
         prompt_value = payload["prompt"]
@@ -382,9 +388,12 @@ def fetch_langfuse_prompt(
     url = f"{config.langfuse_host.rstrip('/')}/api/public/prompts/{name}"
     params = {"label": label} if label else None
     headers = _basic_auth_header(config.langfuse_public_key, config.langfuse_secret_key)
+    verify = _langfuse_verify_setting(config)
 
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=timeout_s)
+        response = requests.get(
+            url, headers=headers, params=params, timeout=timeout_s, verify=verify
+        )
     except requests.RequestException as exc:
         logger.warning("Failed to reach Langfuse prompt API for %s: %s", name, exc)
         return None
@@ -477,12 +486,15 @@ def ensure_langfuse_prompt(
 
     url = f"{config.langfuse_host.rstrip('/')}/api/public/prompts"
     headers = _basic_auth_header(config.langfuse_public_key, config.langfuse_secret_key)
+    verify = _langfuse_verify_setting(config)
     payload: Dict[str, Any] = {"name": name, "prompt": prompt}
     if label:
         payload["labels"] = [label]
 
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=timeout_s)
+        response = requests.post(
+            url, headers=headers, json=payload, timeout=timeout_s, verify=verify
+        )
     except requests.RequestException as exc:
         logger.warning("Failed to create Langfuse prompt %s: %s", name, exc)
         return False
