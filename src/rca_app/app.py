@@ -35,15 +35,17 @@ def build_app(config: AppConfig) -> RCAApp:
     llm = agents["llm"]
 
     graph = StateGraph(RCAState)
-    graph.add_node(
-        "orchestration_agent",
-        lambda rca_state, config: orchestration_agent(
+    def run_orchestration(rca_state, runtime_config):
+        return orchestration_agent(
             rca_state,
-            config,
+            runtime_config,
             store,
             router_agent,
             app_config=config,
-        ),
+        )
+    graph.add_node(
+        "orchestration_agent",
+        run_orchestration,
     )
     graph.set_entry_point("orchestration_agent")
     app = graph.compile(checkpointer=checkpointer, store=store)
