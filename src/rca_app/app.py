@@ -37,9 +37,9 @@ def build_app(config: AppConfig) -> RCAApp:
     graph = StateGraph(RCAState)
     graph.add_node(
         "orchestration_agent",
-        lambda rca_state, config: orchestration_agent(
+        lambda rca_state, invoke_config: orchestration_agent(
             rca_state,
-            config,
+            invoke_config,
             store,
             router_agent,
             app_config=config,
