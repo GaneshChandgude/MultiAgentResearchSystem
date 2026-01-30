@@ -8,7 +8,9 @@ from typing import Any, Dict
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
+from .config import AppConfig
 from .memory import format_conversation
+from .observability import build_langfuse_invoke_config
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +104,7 @@ def build_semantic_chain(llm):
     return prompt | llm | JsonOutputParser()
 
 
-def add_episodic_memory(rca_state, config, store, llm) -> None:
+def add_episodic_memory(rca_state, config, store, llm, app_config: AppConfig) -> None:
     history = rca_state.get("history")
     if not history:
         logger.debug("Skipping episodic memory; no history found")
@@ -110,7 +112,14 @@ def add_episodic_memory(rca_state, config, store, llm) -> None:
 
     conversation = format_conversation(history)
     reflect = build_reflection_chain(llm)
-    reflection = reflect.invoke({"conversation": conversation})
+    observability_config = build_langfuse_invoke_config(
+        app_config,
+        user_id=config["configurable"]["user_id"],
+        query_id=config["configurable"]["thread_id"],
+        tags=["MemoryReflection", "Episodic"],
+        metadata={"entrypoint": "add_episodic_memory", "history_length": len(history)},
+    )
+    reflection = reflect.invoke({"conversation": conversation}, config=observability_config)
     reflection["conversation"] = conversation
 
     store.put(
@@ -121,7 +130,7 @@ def add_episodic_memory(rca_state, config, store, llm) -> None:
     logger.info("Episodic memory stored for user_id=%s", config["configurable"]["user_id"])
 
 
-def add_procedural_memory(rca_state, config, store, llm) -> None:
+def add_procedural_memory(rca_state, config, store, llm, app_config: AppConfig) -> None:
     history = rca_state.get("history")
     if not history:
         logger.debug("Skipping procedural memory; no history found")
@@ -129,7 +138,17 @@ def add_procedural_memory(rca_state, config, store, llm) -> None:
 
     conversation = format_conversation(history)
     procedural_reflection = build_procedural_chain(llm)
-    reflection = procedural_reflection.invoke({"conversation": conversation})
+    observability_config = build_langfuse_invoke_config(
+        app_config,
+        user_id=config["configurable"]["user_id"],
+        query_id=config["configurable"]["thread_id"],
+        tags=["MemoryReflection", "Procedural"],
+        metadata={"entrypoint": "add_procedural_memory", "history_length": len(history)},
+    )
+    reflection = procedural_reflection.invoke(
+        {"conversation": conversation},
+        config=observability_config,
+    )
 
     store.put(
         namespace=("procedural", config["configurable"]["user_id"]),
@@ -144,6 +163,7 @@ def build_semantic_memory(
     query: str,
     store,
     llm,
+    app_config: AppConfig,
     min_episodes: int = 3,
 ) -> Dict[str, Any] | None:
     episodic = store.search(("episodic", user_id), query=query, limit=10)
@@ -161,7 +181,17 @@ def build_semantic_memory(
         )
 
     semantic_reflection_chain = build_semantic_chain(llm)
-    semantic = semantic_reflection_chain.invoke({"episodes": "\n".join(episodes_text)})
+    observability_config = build_langfuse_invoke_config(
+        app_config,
+        user_id=user_id,
+        query_id=None,
+        tags=["MemoryReflection", "Semantic"],
+        metadata={"entrypoint": "build_semantic_memory", "episode_count": len(episodic)},
+    )
+    semantic = semantic_reflection_chain.invoke(
+        {"episodes": "\n".join(episodes_text)},
+        config=observability_config,
+    )
 
     if not semantic or not isinstance(semantic, dict):
         return None
