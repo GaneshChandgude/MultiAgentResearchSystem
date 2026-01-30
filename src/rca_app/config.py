@@ -24,6 +24,8 @@ class AppConfig:
     langfuse_host: str
     langfuse_release: str
     langfuse_debug: bool
+    langfuse_prompt_enabled: bool
+    langfuse_prompt_label: str
 
 
 DEFAULT_AZURE_API_VERSION = "2024-12-01-preview"
@@ -53,6 +55,12 @@ def load_config() -> AppConfig:
     langfuse_host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com").strip()
     langfuse_release = os.getenv("LANGFUSE_RELEASE", "").strip()
     langfuse_debug = os.getenv("LANGFUSE_DEBUG", "false").strip().lower() in {"1", "true", "yes", "on"}
+    langfuse_prompt_enabled = os.getenv("LANGFUSE_PROMPT_ENABLED", "").strip().lower()
+    if langfuse_prompt_enabled:
+        prompt_enabled = langfuse_prompt_enabled in {"1", "true", "yes", "on"}
+    else:
+        prompt_enabled = langfuse_enabled
+    langfuse_prompt_label = os.getenv("LANGFUSE_PROMPT_LABEL", "production").strip()
 
     return AppConfig(
         azure_openai_endpoint=endpoint,
@@ -72,4 +80,6 @@ def load_config() -> AppConfig:
         langfuse_host=langfuse_host,
         langfuse_release=langfuse_release,
         langfuse_debug=langfuse_debug,
+        langfuse_prompt_enabled=prompt_enabled,
+        langfuse_prompt_label=langfuse_prompt_label,
     )
