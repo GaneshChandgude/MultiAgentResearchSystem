@@ -10,6 +10,7 @@ from langchain.tools import tool
 from langmem import create_manage_memory_tool, create_search_memory_tool
 
 from .config import AppConfig
+from .langfuse_prompts import PROMPT_DEFINITIONS, render_prompt
 from .llm import get_llm_model
 from .memory import build_memory_augmented_prompt, append_rca_history
 from .observability import build_langfuse_invoke_config
@@ -66,33 +67,14 @@ def build_hypothesis_tool(config: AppConfig, store, checkpointer, llm):
             query_id,
             len(task),
         )
+        system_prompt = render_prompt(
+            config,
+            name="rca.hypothesis.system",
+            fallback=PROMPT_DEFINITIONS["rca.hypothesis.system"],
+            variables={"memory_context": memory_context},
+        )
         messages = [
-            {
-                "role": "system",
-                "content": f"""
-You are an RCA hypothesis-generation expert.
-
-Context (do not repeat, only use for reasoning):
-{memory_context}
-
-Your task:
-Given the user input, generate possible root-cause hypotheses.
-
-STRICT OUTPUT RULES:
-1. Output **only valid JSON**.
-2. Root JSON object must have exactly two fields:
-   - "hypotheses": an array of **plain strings**.
-   - "reasoning": a string explaining how the hypotheses were generated.
-3. No markdown or code fences.
-4. No extra commentary or fields.
-
-JSON schema:
-{{
-  "hypotheses": ["...", "..."],
-  "reasoning": "..."
-}}
-""",
-            },
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": task},
         ]
 
@@ -826,77 +808,19 @@ def orchestration_agent(
     )
     logger.debug("Memory context length=%s", len(memory_context))
 
-    messages = [
-        {
-            "role": "system",
-            "content": f"""
-You are a Deep Research Agent.
-
-Task: {rca_state["task"]}
-
-User Id: {config["configurable"]["user_id"]}
-
-Query Id: {config["configurable"]["thread_id"]}
-
-Use the following sementic abstract + procedural + episodic + conversation context:
-Memory Context(memory_context):'''{memory_context}'''
-
-Your role is to analyze the user's input, determine the appropriate
-research or response strategy, and use the available tools to resolve
-the request.
-
-The set of tools available to you may change dynamically.
-You must infer what each tool does from its description.
-
-------------------------------------------------------------
-CORE RESPONSIBILITIES:
-
-1. Understand User Intent
-  - The user input may be:
-    • a greeting or help request (e.g., "hi", "hello", "help")
-    • a general question
-    • a root cause analysis or supply chain investigation
-  - Do not assume the input is analytical.
-
-2. Decide the Level of Depth Required
-  - If the input can be addressed with a simple explanation or response,
-    prefer a lightweight approach.
-  - If the input requires investigation, reasoning, or analysis,
-    proceed with deep research behavior.
-
-3. Create an Internal Plan
-  - Before calling any tool, determine:
-    • what information is missing
-    • what needs to be discovered or generated
-    • whether memory or prior context is relevant
-  - The plan does not need to be shown unless required by a tool.
-
-4. Execute Using Tools
-  - Use the **todo's** tools to carry out the plan.
-  - Choose tools based on their descriptions, not their names.
-  - You may call multiple tools if necessary.
-  - Always prefer the minimal set of tool calls needed.
-
-5. RCA-Specific Behavior (when applicable)
-  - When the task involves diagnosing causes of a problem:
-    • avoid jumping to conclusions
-    • favor hypothesis generation before validation
-    • rely on state, memory, and evidence
-
-------------------------------------------------------------
-IMPORTANT RULES:
-
-- Do not hard-code assumptions about tool availability.
-- Do not invent tools or capabilities.
-- Do not answer complex questions directly in free text
-  if an appropriate tool exists.
-- Be robust to vague, short, or conversational user inputs.
-- Think first, then act through tools.
-
-You are expected to behave as a flexible, adaptive
-deep-research agent, not a fixed pipeline.
-""",
+    system_prompt = render_prompt(
+        app_config,
+        name="rca.orchestration.system",
+        fallback=PROMPT_DEFINITIONS["rca.orchestration.system"],
+        variables={
+            "task": rca_state["task"],
+            "user_id": config["configurable"]["user_id"],
+            "query_id": config["configurable"]["thread_id"],
+            "memory_context": memory_context,
         },
+    )
+    messages = [
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": rca_state["task"]},
     ]
 

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .app import build_app
 from .config import load_config, resolve_data_dir
+from .langfuse_prompts import sync_prompt_definitions
 from .memory import mark_memory_useful, semantic_recall
 from .memory_reflection import add_episodic_memory, add_procedural_memory, build_semantic_memory
 from .observability import build_langfuse_invoke_config
@@ -162,6 +163,10 @@ def main(argv: list[str] | None = None):
     )
     sap_parser.add_argument("--host", default="0.0.0.0")
     sap_parser.add_argument("--port", type=int, default=8700)
+    prompt_parser = subparsers.add_parser(
+        "sync-langfuse-prompts", help="Create Langfuse prompts if missing"
+    )
+    prompt_parser.add_argument("--label", default=None)
 
     args = parser.parse_args(argv)
 
@@ -181,6 +186,11 @@ def main(argv: list[str] | None = None):
         from .mcp_servers import run_sap_business_one_mcp
 
         run_sap_business_one_mcp(load_config(), host=args.host, port=args.port)
+        return 0
+    if args.command == "sync-langfuse-prompts":
+        config = load_config()
+        synced = sync_prompt_definitions(config, label=args.label or config.langfuse_prompt_label)
+        print(f"Synced {synced} Langfuse prompts.")
         return 0
 
     parser.print_help()
