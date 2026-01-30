@@ -5,6 +5,7 @@ langchain-openai
 langchain-groq
 langgraph
 langmem
+langfuse
 mcp
 pandas
 pydantic

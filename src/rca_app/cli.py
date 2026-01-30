@@ -10,6 +10,7 @@ from .app import build_app
 from .config import load_config, resolve_data_dir
 from .memory import mark_memory_useful, semantic_recall
 from .memory_reflection import add_episodic_memory, add_procedural_memory, build_semantic_memory
+from .observability import build_langfuse_invoke_config
 
 logger = logging.getLogger(__name__)
 
@@ -69,14 +70,15 @@ def run_chat():
         if user_input.lower() in {"exit", "quit"}:
             if last_state and last_config:
                 logger.info("Persisting memories for user_id=%s", last_config["configurable"]["user_id"])
-                add_episodic_memory(last_state, last_config, app.store, app.llm)
+                add_episodic_memory(last_state, last_config, app.store, app.llm, app.config)
                 build_semantic_memory(
                     user_id=last_config["configurable"]["user_id"],
                     query=user_input,
                     store=app.store,
                     llm=app.llm,
+                    app_config=app.config,
                 )
-                add_procedural_memory(last_state, last_config, app.store, app.llm)
+                add_procedural_memory(last_state, last_config, app.store, app.llm, app.config)
 
                 used_semantic = semantic_recall(last_state["task"], app.store, last_config)
                 mark_memory_useful(used_semantic)
@@ -85,13 +87,20 @@ def run_chat():
             break
 
         config_dict = {"configurable": {"user_id": user_id, "thread_id": query_id}}
+        observability_config = build_langfuse_invoke_config(
+            app.config,
+            user_id=user_id,
+            query_id=query_id,
+            tags=["CLIChat"],
+            metadata={"entrypoint": "run_chat", "task_length": len(user_input)},
+        )
         rca_state = {"task": user_input, "output": "", "trace": []}
 
         print("\n" + "-" * 70)
         print(" RCA Bot is thinking...")
         print("-" * 70)
 
-        rca_state = app.app.invoke(rca_state, config_dict)
+        rca_state = app.app.invoke(rca_state, {**config_dict, **observability_config})
         logger.info("RCA response generated")
 
         print("\n RCA Bot Answer")

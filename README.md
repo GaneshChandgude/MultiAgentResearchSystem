@@ -95,6 +95,19 @@ export RCA_MCP_SALESFORCE_URL="http://localhost:8600"
 export RCA_MCP_SAP_URL="http://localhost:8700"
 ```
 
+6. **(Optional) Enable Langfuse observability** to capture traces, generations, and tool calls:
+
+```bash
+export LANGFUSE_ENABLED="true"
+export LANGFUSE_PUBLIC_KEY="your-public-key"
+export LANGFUSE_SECRET_KEY="your-secret-key"
+export LANGFUSE_HOST="https://cloud.langfuse.com" # or self-hosted URL
+
+# Optional metadata
+export LANGFUSE_RELEASE="rca-app@1.0.0"
+export LANGFUSE_DEBUG="false"
+```
+
 ## Usage
 
 ### Quick start

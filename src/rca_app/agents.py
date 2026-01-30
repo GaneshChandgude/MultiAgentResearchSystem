@@ -12,6 +12,7 @@ from langmem import create_manage_memory_tool, create_search_memory_tool
 from .config import AppConfig
 from .llm import get_llm_model
 from .memory import build_memory_augmented_prompt, append_rca_history
+from .observability import build_langfuse_invoke_config
 from .toolset_registry import ToolsetRegistry
 from .toolsets import build_salesforce_toolset, build_sap_business_one_toolset
 from .types import RCAState
@@ -95,7 +96,17 @@ JSON schema:
             {"role": "user", "content": task},
         ]
 
-        tool_config = {"configurable": {"user_id": user_id, "thread_id": query_id}}
+        observability_config = build_langfuse_invoke_config(
+            config,
+            user_id=user_id,
+            query_id=query_id,
+            tags=["HypothesisAgent"],
+            metadata={"agent": "HypothesisAgent", "task_length": len(task)},
+        )
+        tool_config = {
+            "configurable": {"user_id": user_id, "thread_id": query_id},
+            **observability_config,
+        }
 
         result = hypothesis_react_agent.invoke({"messages": messages}, tool_config)
         final_msg = result["messages"][-1].content
@@ -229,7 +240,21 @@ Hypotheses: {sales_related_hypotheses}
             },
         ]
 
-        tool_config = {"configurable": {"user_id": user_id, "thread_id": query_id}}
+        observability_config = build_langfuse_invoke_config(
+            config,
+            user_id=user_id,
+            query_id=query_id,
+            tags=["SalesAnalysisAgent"],
+            metadata={
+                "agent": "SalesAnalysisAgent",
+                "task_length": len(task),
+                "hypothesis_count": len(hypotheses),
+            },
+        )
+        tool_config = {
+            "configurable": {"user_id": user_id, "thread_id": query_id},
+            **observability_config,
+        }
         result = sales_react_agent.invoke({"messages": messages}, tool_config)
         final_msg = result["messages"][-1].content
         output = process_response(final_msg, llm=llm)
@@ -360,7 +385,21 @@ Hypotheses to validate: {inventory_related_hypotheses}
             },
         ]
 
-        tool_config = {"configurable": {"user_id": user_id, "thread_id": query_id}}
+        observability_config = build_langfuse_invoke_config(
+            config,
+            user_id=user_id,
+            query_id=query_id,
+            tags=["InventoryAnalysisAgent"],
+            metadata={
+                "agent": "InventoryAnalysisAgent",
+                "task_length": len(task),
+                "hypothesis_count": len(hypotheses),
+            },
+        )
+        tool_config = {
+            "configurable": {"user_id": user_id, "thread_id": query_id},
+            **observability_config,
+        }
         result = inventory_react_agent.invoke({"messages": messages}, tool_config)
         final_msg = result["messages"][-1].content
         output = process_response(final_msg, llm=llm)
@@ -468,7 +507,21 @@ Inventory insights:
             },
         ]
 
-        tool_config = {"configurable": {"user_id": user_id, "thread_id": query_id}}
+        observability_config = build_langfuse_invoke_config(
+            config,
+            user_id=user_id,
+            query_id=query_id,
+            tags=["ValidationAgent"],
+            metadata={
+                "agent": "ValidationAgent",
+                "task_length": len(task),
+                "hypothesis_count": len(hypotheses),
+            },
+        )
+        tool_config = {
+            "configurable": {"user_id": user_id, "thread_id": query_id},
+            **observability_config,
+        }
         result = validation_react_agent.invoke({"messages": messages}, tool_config)
         final_msg = result["messages"][-1].content
         resp = process_response(final_msg, llm=llm)
@@ -600,7 +653,21 @@ Prior trace:
             },
         ]
 
-        tool_config = {"configurable": {"user_id": user_id, "thread_id": query_id}}
+        observability_config = build_langfuse_invoke_config(
+            config,
+            user_id=user_id,
+            query_id=query_id,
+            tags=["RootCauseAgent"],
+            metadata={
+                "agent": "RootCauseAgent",
+                "task_length": len(task),
+                "trace_steps": len(trace),
+            },
+        )
+        tool_config = {
+            "configurable": {"user_id": user_id, "thread_id": query_id},
+            **observability_config,
+        }
         result = root_cause_react_agent.invoke({"messages": messages}, tool_config)
         final_msg = result["messages"][-1].content
         resp = process_response(final_msg, llm=llm)
@@ -704,7 +771,17 @@ Use the following structured RCA output:
             },
         ]
 
-        tool_config = {"configurable": {"user_id": user_id, "thread_id": query_id}}
+        observability_config = build_langfuse_invoke_config(
+            config,
+            user_id=user_id,
+            query_id=query_id,
+            tags=["ReportAgent"],
+            metadata={"agent": "ReportAgent", "task_length": len(task)},
+        )
+        tool_config = {
+            "configurable": {"user_id": user_id, "thread_id": query_id},
+            **observability_config,
+        }
         report_text = rca_report_agent.invoke(report_messages, tool_config).content
         logger.debug("Report tool generated report length=%s", len(report_text))
 
@@ -730,7 +807,13 @@ def build_router_agent(config: AppConfig, store, checkpointer, llm, tools):
     )
 
 
-def orchestration_agent(rca_state: RCAState, config: Dict[str, Any], store, router_agent):
+def orchestration_agent(
+    rca_state: RCAState,
+    config: Dict[str, Any],
+    store,
+    router_agent,
+    app_config: AppConfig,
+):
     if not rca_state.get("history"):
         rca_state["history"] = []
         logger.debug("Initialized empty history in RCA state")
@@ -817,9 +900,21 @@ deep-research agent, not a fixed pipeline.
         {"role": "user", "content": rca_state["task"]},
     ]
 
+    observability_config = build_langfuse_invoke_config(
+        app_config,
+        user_id=config["configurable"]["user_id"],
+        query_id=config["configurable"]["thread_id"],
+        tags=["OrchestrationAgent"],
+        metadata={
+            "agent": "OrchestrationAgent",
+            "task_length": len(rca_state["task"]),
+            "trace_steps": len(rca_state.get("trace", [])),
+        },
+    )
     tool_config = {
         **config,
         "configurable": {**config.get("configurable", {}), "rca_state": rca_state},
+        **observability_config,
     }
 
     logger.debug(

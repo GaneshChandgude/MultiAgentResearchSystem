@@ -4,6 +4,7 @@ import logging
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
 
 from .config import AppConfig
+from .observability import build_langfuse_callbacks
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,10 @@ def get_llm_model(config: AppConfig) -> AzureChatOpenAI:
         config.azure_openai_endpoint,
         config.azure_openai_api_version,
     )
+    callbacks = build_langfuse_callbacks(config)
+    if callbacks:
+        logger.info("Langfuse enabled for LLM observability")
+
     return AzureChatOpenAI(
         azure_endpoint=config.azure_openai_endpoint,
         api_key=config.azure_openai_api_key,
@@ -27,6 +32,7 @@ def get_llm_model(config: AppConfig) -> AzureChatOpenAI:
         temperature=0.7,
         timeout=300,
         max_retries=3,
+        callbacks=callbacks or None,
     )
 
 
