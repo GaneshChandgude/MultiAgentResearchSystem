@@ -16,6 +16,7 @@ from .memory_reflection import add_episodic_memory, add_procedural_memory, build
 from .ui_store import UIStore
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 app = FastAPI(title="RCA Assistant API")
 app.add_middleware(

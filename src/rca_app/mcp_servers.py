@@ -7,6 +7,7 @@ from .inventory_mcp_server import init_inventory_mcp_server
 from .sales_mcp_server import init_sales_mcp_server
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 
 def _configure_mcp_server(mcp, host: str, port: int) -> None:

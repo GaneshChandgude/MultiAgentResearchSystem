@@ -13,6 +13,7 @@ from .config import AppConfig
 from .langfuse_prompts import PROMPT_DEFINITIONS, render_prompt
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 
 def extract_json_from_response(response_text: str) -> str:

@@ -5,6 +5,7 @@ import logging
 from typing import Any, Dict, Iterable, List
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 
 @dataclass

@@ -7,6 +7,7 @@ from .config import AppConfig
 from .observability import build_langfuse_callbacks
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 
 def get_llm_model(config: AppConfig) -> AzureChatOpenAI:

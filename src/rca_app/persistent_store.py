@@ -11,6 +11,7 @@ from langgraph.store.base import BaseStore, IndexConfig, Op, PutOp, Result
 from langgraph.store.memory import InMemoryStore
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 
 class SQLiteBackedStore(BaseStore):

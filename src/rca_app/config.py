@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
+import logging
 import os
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 
 @dataclass(frozen=True)
@@ -38,11 +42,14 @@ DEFAULT_EMBEDDINGS_MODEL = "TxtEmbedAda002"
 def resolve_data_dir() -> Path:
     env_dir = os.getenv("RCA_DATA_DIR")
     if env_dir:
+        logger.info("Using RCA data directory from RCA_DATA_DIR")
         return Path(env_dir).expanduser().resolve()
+    logger.info("Using default RCA data directory")
     return Path(__file__).resolve().parents[2] / "data"
 
 
 def load_config() -> AppConfig:
+    logger.info("Loading RCA configuration")
     endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip()
     api_key = os.getenv("AZURE_OPENAI_API_KEY", "").strip()
     deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "").strip()
@@ -71,6 +78,13 @@ def load_config() -> AppConfig:
     }
     langfuse_ca_bundle = os.getenv("LANGFUSE_CA_BUNDLE", "").strip()
 
+    logger.debug(
+        "Config resolved endpoint=%s deployment=%s data_dir=%s langfuse_enabled=%s",
+        endpoint or "<unset>",
+        deployment or "<unset>",
+        resolve_data_dir(),
+        langfuse_enabled,
+    )
     return AppConfig(
         azure_openai_endpoint=endpoint,
         azure_openai_api_key=api_key,

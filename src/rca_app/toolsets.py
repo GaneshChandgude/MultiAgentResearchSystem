@@ -7,6 +7,7 @@ from .mcp_toolset import build_mcp_toolset
 from .toolset_registry import Toolset
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 
 def build_salesforce_toolset(config: AppConfig) -> Toolset:
