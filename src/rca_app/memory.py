@@ -3,10 +3,13 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from collections import defaultdict
+from pathlib import Path
+from contextlib import ExitStack
 from typing import Any, Dict, List
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.memory import InMemorySaver, PersistentDict
 from langgraph.store.base import BaseStore
 
 from .config import AppConfig
@@ -23,6 +26,48 @@ class MemoryStores:
     checkpointer: InMemorySaver
 
 
+class DiskBackedCheckpointer(InMemorySaver):
+    def __init__(self, base_dir: Path) -> None:
+        super().__init__()
+        base_dir.mkdir(parents=True, exist_ok=True)
+        self._storage_path = base_dir / "checkpointer_storage.pkl"
+        self._writes_path = base_dir / "checkpointer_writes.pkl"
+        self._blobs_path = base_dir / "checkpointer_blobs.pkl"
+
+        self.storage = PersistentDict(lambda: defaultdict(dict), filename=str(self._storage_path))
+        self.writes = PersistentDict(dict, filename=str(self._writes_path))
+        self.blobs = PersistentDict(dict, filename=str(self._blobs_path))
+        self.stack = ExitStack()
+        self.stack.enter_context(self.storage)
+        self.stack.enter_context(self.writes)
+        self.stack.enter_context(self.blobs)
+        self._load_persistent_state()
+
+    def _load_persistent_state(self) -> None:
+        for store in (self.storage, self.writes, self.blobs):
+            if not Path(store.filename).exists():
+                continue
+            store.load()
+        logger.info("Loaded disk-backed checkpoints from %s", self._storage_path.parent)
+
+    def _sync(self) -> None:
+        for store in (self.storage, self.writes, self.blobs):
+            store.sync()
+
+    def put(self, config, checkpoint, metadata, new_versions):
+        updated = super().put(config, checkpoint, metadata, new_versions)
+        self._sync()
+        return updated
+
+    def put_writes(self, config, writes, task_id, task_path=""):
+        super().put_writes(config, writes, task_id, task_path=task_path)
+        self._sync()
+
+    def delete_thread(self, thread_id: str) -> None:
+        super().delete_thread(thread_id)
+        self._sync()
+
+
 def setup_memory(config: AppConfig) -> MemoryStores:
     embed = get_embeddings(config)
     store = SQLiteBackedStore(
@@ -32,7 +77,7 @@ def setup_memory(config: AppConfig) -> MemoryStores:
             "embed": embed,
         }
     )
-    checkpointer = InMemorySaver()
+    checkpointer = DiskBackedCheckpointer(config.data_dir / "checkpoints")
     logger.info("Memory store initialized using SQLite at %s", config.data_dir / "memory_store.sqlite")
     return MemoryStores(store=store, checkpointer=checkpointer)
 
