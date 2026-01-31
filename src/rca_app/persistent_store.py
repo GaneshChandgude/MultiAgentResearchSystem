@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Iterable, List
 
@@ -18,7 +19,8 @@ class SQLiteBackedStore(BaseStore):
     def __init__(self, path: Path, *, index: IndexConfig | None = None) -> None:
         self._path = path
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self._path)
+        self._conn = sqlite3.connect(self._path, check_same_thread=False)
+        self._lock = threading.Lock()
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute(
             """
@@ -34,8 +36,9 @@ class SQLiteBackedStore(BaseStore):
         self._load_from_disk()
 
     def _load_from_disk(self) -> None:
-        cursor = self._conn.execute("SELECT namespace, key, value FROM memory_store")
-        rows = cursor.fetchall()
+        with self._lock:
+            cursor = self._conn.execute("SELECT namespace, key, value FROM memory_store")
+            rows = cursor.fetchall()
         if not rows:
             logger.info("No persisted memory found at %s", self._path)
             return
@@ -52,19 +55,20 @@ class SQLiteBackedStore(BaseStore):
         results = self._store.batch(ops_list)
         put_ops = [op for op in ops_list if isinstance(op, PutOp)]
         if put_ops:
-            with self._conn:
-                for op in put_ops:
-                    namespace_json = json.dumps(op.namespace)
-                    if op.value is None:
-                        self._conn.execute(
-                            "DELETE FROM memory_store WHERE namespace = ? AND key = ?",
-                            (namespace_json, op.key),
-                        )
-                    else:
-                        self._conn.execute(
-                            "INSERT OR REPLACE INTO memory_store (namespace, key, value) VALUES (?, ?, ?)",
-                            (namespace_json, op.key, json.dumps(op.value)),
-                        )
+            with self._lock:
+                with self._conn:
+                    for op in put_ops:
+                        namespace_json = json.dumps(op.namespace)
+                        if op.value is None:
+                            self._conn.execute(
+                                "DELETE FROM memory_store WHERE namespace = ? AND key = ?",
+                                (namespace_json, op.key),
+                            )
+                        else:
+                            self._conn.execute(
+                                "INSERT OR REPLACE INTO memory_store (namespace, key, value) VALUES (?, ?, ?)",
+                                (namespace_json, op.key, json.dumps(op.value)),
+                            )
             logger.debug("Persisted %s memory operations", len(put_ops))
         return results
 
