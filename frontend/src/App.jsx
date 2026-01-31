@@ -329,15 +329,60 @@ function TracePanel({ trace }) {
     const list = Array.isArray(trace) ? trace : [trace];
     return list.flatMap((item) => {
       if (!item) return [];
-      const calls = item.tool_calls || item.calls || [];
+      const messages = item.tool_calls || item.calls || [];
       return [
         {
           agent: item.agent || "Agent",
-          calls: calls
+          messages
         }
       ];
     });
   }, [trace]);
+
+  const buildToolCalls = (messages) => {
+    if (!Array.isArray(messages)) return [];
+    const outputs = new Map();
+
+    messages.forEach((message) => {
+      if (message?.type === "ToolMessage" && message.tool_call_id) {
+        outputs.set(message.tool_call_id, message.content);
+      }
+    });
+
+    const toolCalls = [];
+    messages.forEach((message) => {
+      if (!message?.tool_calls?.length) return;
+      message.tool_calls.forEach((call) => {
+        toolCalls.push({
+          id: call.id,
+          name: call.name || "Tool call",
+          args: call.args,
+          output: outputs.get(call.id)
+        });
+      });
+    });
+
+    if (toolCalls.length) return toolCalls;
+
+    return messages
+      .filter((message) => message?.type === "ToolMessage")
+      .map((message) => ({
+        id: message.tool_call_id || message.content,
+        name: "Tool output",
+        args: null,
+        output: message.content
+      }));
+  };
+
+  const formatPayload = (payload) => {
+    if (payload == null) return "";
+    if (typeof payload === "string") return payload;
+    try {
+      return JSON.stringify(payload, null, 2);
+    } catch (err) {
+      return String(payload);
+    }
+  };
 
   if (!entries.length) {
     return <p>No trace available yet.</p>;
@@ -345,16 +390,35 @@ function TracePanel({ trace }) {
 
   return (
     <div className="trace-panel">
-      {entries.map((entry, index) => (
+      {entries.map((entry, index) => {
+        const toolCalls = buildToolCalls(entry.messages);
+        return (
         <div className="trace-item" key={`${entry.agent}-${index}`}>
           <strong>{entry.agent}</strong>
-          {entry.calls.length ? (
+          {toolCalls.length ? (
             <ul style={{ marginTop: "8px", paddingLeft: "16px" }}>
-              {entry.calls.map((call, idx) => (
-                <li key={`${call.name}-${idx}`}>
-                  <div style={{ fontWeight: 600 }}>{call.name || "Tool call"}</div>
+              {toolCalls.map((call, idx) => (
+                <li key={`${call.name}-${call.id || idx}`}>
+                  <div style={{ fontWeight: 600 }}>{call.name}</div>
                   {call.args ? (
-                    <pre style={{ whiteSpace: "pre-wrap", marginTop: "4px" }}>{call.args}</pre>
+                    <div style={{ marginTop: "6px" }}>
+                      <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>
+                        Input
+                      </div>
+                      <pre style={{ whiteSpace: "pre-wrap", marginTop: "4px" }}>
+                        {formatPayload(call.args)}
+                      </pre>
+                    </div>
+                  ) : null}
+                  {call.output ? (
+                    <div style={{ marginTop: "6px" }}>
+                      <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>
+                        Output
+                      </div>
+                      <pre style={{ whiteSpace: "pre-wrap", marginTop: "4px" }}>
+                        {formatPayload(call.output)}
+                      </pre>
+                    </div>
                   ) : null}
                 </li>
               ))}
@@ -363,7 +427,8 @@ function TracePanel({ trace }) {
             <p style={{ marginTop: "8px" }}>No tool calls captured.</p>
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
