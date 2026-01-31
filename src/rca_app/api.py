@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field
 
 from .app import build_app, run_rca
 from .config import AppConfig, load_config, resolve_data_dir
+from .memory import mark_memory_useful, semantic_recall
+from .memory_reflection import add_episodic_memory, add_procedural_memory, build_semantic_memory
 from .ui_store import UIStore
 
 logger = logging.getLogger(__name__)
@@ -25,6 +27,7 @@ app.add_middleware(
 
 store = UIStore(resolve_data_dir() / "rca_ui.db")
 _app_cache: Dict[str, Any] = {}
+_session_cache: Dict[str, Dict[str, Any]] = {}
 
 
 class LoginRequest(BaseModel):
@@ -34,6 +37,10 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     user_id: str
     username: str
+
+
+class LogoutRequest(BaseModel):
+    user_id: str
 
 
 class LLMConfigRequest(BaseModel):
@@ -114,6 +121,39 @@ def _get_rca_app(config: AppConfig):
     return _app_cache[key]
 
 
+def _persist_memories(user_id: str) -> None:
+    session = _session_cache.get(user_id)
+    if not session:
+        logger.info("No cached session found for user_id=%s; skipping memory persistence", user_id)
+        return
+
+    last_state = session.get("state")
+    last_config = session.get("config")
+    last_query = session.get("last_query")
+
+    if not last_state or not last_config:
+        logger.info("Missing session data for user_id=%s; skipping memory persistence", user_id)
+        return
+
+    config = _build_user_config(user_id)
+    rca_app = _get_rca_app(config)
+
+    logger.info("Persisting memories for user_id=%s", last_config["configurable"]["user_id"])
+    add_episodic_memory(last_state, last_config, rca_app.store, rca_app.llm, rca_app.config)
+    build_semantic_memory(
+        user_id=last_config["configurable"]["user_id"],
+        query=last_query or last_state.get("task", ""),
+        store=rca_app.store,
+        llm=rca_app.llm,
+        app_config=rca_app.config,
+    )
+    add_procedural_memory(last_state, last_config, rca_app.store, rca_app.llm, rca_app.config)
+
+    used_semantic = semantic_recall(last_state["task"], rca_app.store, last_config)
+    mark_memory_useful(used_semantic)
+    _session_cache.pop(user_id, None)
+
+
 def _run_job(job_id: str, user_id: str, query: str) -> None:
     try:
         store.update_job(job_id, status="running", progress=15, message="Loading configuration")
@@ -123,6 +163,12 @@ def _run_job(job_id: str, user_id: str, query: str) -> None:
         store.update_job(job_id, status="running", progress=60, message="Running root cause analysis")
         result = run_rca(rca_app, query, user_id=user_id, query_id=job_id)
         store.update_job(job_id, status="running", progress=85, message="Assembling response")
+
+        _session_cache[user_id] = {
+            "state": result,
+            "config": {"configurable": {"user_id": user_id, "thread_id": job_id}},
+            "last_query": query,
+        }
 
         response = result.get("output", "")
         trace = result.get("trace", [])
@@ -155,6 +201,12 @@ async def health() -> Dict[str, str]:
 async def login(payload: LoginRequest) -> LoginResponse:
     user_id = store.create_user(payload.username)
     return LoginResponse(user_id=user_id, username=payload.username)
+
+
+@app.post("/api/logout")
+async def logout(payload: LogoutRequest, background_tasks: BackgroundTasks) -> Dict[str, str]:
+    background_tasks.add_task(_persist_memories, payload.user_id)
+    return {"status": "logged_out"}
 
 
 @app.get("/api/config/defaults", response_model=ConfigResponse)
