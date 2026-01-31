@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from collections import defaultdict
 from pathlib import Path
 from contextlib import ExitStack
+from threading import Lock
 from typing import Any, Dict, List
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -23,13 +24,14 @@ logger.debug("Loaded module %s", __name__)
 @dataclass
 class MemoryStores:
     store: BaseStore
-    checkpointer: InMemorySaver
+    checkpointer: Any
 
 
 class DiskBackedCheckpointer(InMemorySaver):
     def __init__(self, base_dir: Path) -> None:
         super().__init__()
         base_dir.mkdir(parents=True, exist_ok=True)
+        self._sync_lock = Lock()
         self._storage_path = base_dir / "checkpointer_storage.pkl"
         self._writes_path = base_dir / "checkpointer_writes.pkl"
         self._blobs_path = base_dir / "checkpointer_blobs.pkl"
@@ -51,8 +53,28 @@ class DiskBackedCheckpointer(InMemorySaver):
         logger.info("Loaded disk-backed checkpoints from %s", self._storage_path.parent)
 
     def _sync(self) -> None:
-        for store in (self.storage, self.writes, self.blobs):
-            store.sync()
+        with self._sync_lock:
+            for store in (self.storage, self.writes, self.blobs):
+                self._sync_store(store)
+
+    def _sync_store(self, store: PersistentDict, retries: int = 3, delay: float = 0.05) -> None:
+        last_error = None
+        for attempt in range(1, retries + 1):
+            try:
+                store.sync()
+                return
+            except (FileExistsError, FileNotFoundError) as exc:
+                last_error = exc
+                logger.warning(
+                    "Checkpoint sync retry %s/%s for %s due to %s",
+                    attempt,
+                    retries,
+                    store.filename,
+                    exc,
+                )
+                time.sleep(delay * attempt)
+        if last_error:
+            raise last_error
 
     def put(self, config, checkpoint, metadata, new_versions):
         updated = super().put(config, checkpoint, metadata, new_versions)
@@ -68,6 +90,47 @@ class DiskBackedCheckpointer(InMemorySaver):
         self._sync()
 
 
+class MultiUserCheckpointer:
+    def __init__(self, base_dir: Path) -> None:
+        self._base_dir = base_dir
+        self._lock = Lock()
+        self._checkpointers: Dict[str, DiskBackedCheckpointer] = {}
+
+    def _sanitize_user_id(self, user_id: str) -> str:
+        sanitized = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in user_id)
+        return sanitized or "anonymous"
+
+    def _for_config(self, config: Dict[str, Any]) -> DiskBackedCheckpointer:
+        configurable = config.get("configurable", {})
+        user_id = configurable.get("user_id", "anonymous")
+        safe_user_id = self._sanitize_user_id(str(user_id))
+        with self._lock:
+            if safe_user_id not in self._checkpointers:
+                self._checkpointers[safe_user_id] = DiskBackedCheckpointer(
+                    self._base_dir / safe_user_id
+                )
+            return self._checkpointers[safe_user_id]
+
+    def get_tuple(self, config):
+        return self._for_config(config).get_tuple(config)
+
+    def get(self, config):
+        return self._for_config(config).get(config)
+
+    def put(self, config, checkpoint, metadata, new_versions):
+        return self._for_config(config).put(config, checkpoint, metadata, new_versions)
+
+    def put_writes(self, config, writes, task_id, task_path=""):
+        return self._for_config(config).put_writes(config, writes, task_id, task_path=task_path)
+
+    def delete_thread(self, thread_id: str) -> None:
+        for checkpointer in self._checkpointers.values():
+            checkpointer.delete_thread(thread_id)
+
+    def list(self, config, *, limit=None, before=None):
+        return self._for_config(config).list(config, limit=limit, before=before)
+
+
 def setup_memory(config: AppConfig) -> MemoryStores:
     embed = get_embeddings(config)
     store = SQLiteBackedStore(
@@ -77,7 +140,7 @@ def setup_memory(config: AppConfig) -> MemoryStores:
             "embed": embed,
         }
     )
-    checkpointer = DiskBackedCheckpointer(config.data_dir / "checkpoints")
+    checkpointer = MultiUserCheckpointer(config.data_dir / "checkpoints")
     logger.info("Memory store initialized using SQLite at %s", config.data_dir / "memory_store.sqlite")
     return MemoryStores(store=store, checkpointer=checkpointer)
 
@@ -216,15 +279,21 @@ Instructions:
 
 
 def format_conversation(history: List[BaseMessage]) -> str:
+    if not history:
+        return "No prior conversation."
+
     conversation = []
     for message in history:
+        if not message:
+            continue
         role = ""
         content = ""
         if isinstance(message, (BaseMessage, HumanMessage, AIMessage)):
             role = message.type.upper()
             content = message.content
         conversation.append(f"{role}: {content}")
-    return "\n".join(conversation)
+
+    return "\n".join(conversation) if conversation else "No prior conversation."
 
 
 def mark_memory_useful(memories: List[Any]) -> None:

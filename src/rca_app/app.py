@@ -79,7 +79,9 @@ def run_rca(app: RCAApp, task: str, user_id: str, query_id: str) -> Dict[str, An
         "output": "",
         "trace": [],
     }
-    checkpoint_tuple = app.checkpointer.get_tuple({"configurable": {"thread_id": query_id}})
+    checkpoint_tuple = app.checkpointer.get_tuple(
+        {"configurable": {"thread_id": query_id, "user_id": user_id}}
+    )
     if checkpoint_tuple:
         history = checkpoint_tuple.checkpoint.get("channel_values", {}).get("history")
         if history:
