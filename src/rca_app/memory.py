@@ -24,7 +24,7 @@ logger.debug("Loaded module %s", __name__)
 @dataclass
 class MemoryStores:
     store: BaseStore
-    checkpointer: InMemorySaver
+    checkpointer: Any
 
 
 class DiskBackedCheckpointer(InMemorySaver):
@@ -90,6 +90,47 @@ class DiskBackedCheckpointer(InMemorySaver):
         self._sync()
 
 
+class MultiUserCheckpointer:
+    def __init__(self, base_dir: Path) -> None:
+        self._base_dir = base_dir
+        self._lock = Lock()
+        self._checkpointers: Dict[str, DiskBackedCheckpointer] = {}
+
+    def _sanitize_user_id(self, user_id: str) -> str:
+        sanitized = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in user_id)
+        return sanitized or "anonymous"
+
+    def _for_config(self, config: Dict[str, Any]) -> DiskBackedCheckpointer:
+        configurable = config.get("configurable", {})
+        user_id = configurable.get("user_id", "anonymous")
+        safe_user_id = self._sanitize_user_id(str(user_id))
+        with self._lock:
+            if safe_user_id not in self._checkpointers:
+                self._checkpointers[safe_user_id] = DiskBackedCheckpointer(
+                    self._base_dir / safe_user_id
+                )
+            return self._checkpointers[safe_user_id]
+
+    def get_tuple(self, config):
+        return self._for_config(config).get_tuple(config)
+
+    def get(self, config):
+        return self._for_config(config).get(config)
+
+    def put(self, config, checkpoint, metadata, new_versions):
+        return self._for_config(config).put(config, checkpoint, metadata, new_versions)
+
+    def put_writes(self, config, writes, task_id, task_path=""):
+        return self._for_config(config).put_writes(config, writes, task_id, task_path=task_path)
+
+    def delete_thread(self, thread_id: str) -> None:
+        for checkpointer in self._checkpointers.values():
+            checkpointer.delete_thread(thread_id)
+
+    def list(self, config, *, limit=None, before=None):
+        return self._for_config(config).list(config, limit=limit, before=before)
+
+
 def setup_memory(config: AppConfig) -> MemoryStores:
     embed = get_embeddings(config)
     store = SQLiteBackedStore(
@@ -99,7 +140,7 @@ def setup_memory(config: AppConfig) -> MemoryStores:
             "embed": embed,
         }
     )
-    checkpointer = DiskBackedCheckpointer(config.data_dir / "checkpoints")
+    checkpointer = MultiUserCheckpointer(config.data_dir / "checkpoints")
     logger.info("Memory store initialized using SQLite at %s", config.data_dir / "memory_store.sqlite")
     return MemoryStores(store=store, checkpointer=checkpointer)
 
