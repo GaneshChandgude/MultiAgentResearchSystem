@@ -79,6 +79,11 @@ def run_rca(app: RCAApp, task: str, user_id: str, query_id: str) -> Dict[str, An
         "output": "",
         "trace": [],
     }
+    checkpoint_tuple = app.checkpointer.get_tuple({"configurable": {"thread_id": query_id}})
+    if checkpoint_tuple:
+        history = checkpoint_tuple.checkpoint.get("channel_values", {}).get("history")
+        if history:
+            rca_state["history"] = history
     logger.info("Running RCA for user_id=%s query_id=%s", user_id, query_id)
     logger.debug("RCA task length=%s", len(task))
     return app.app.invoke(rca_state, {**config, **observability_config})
