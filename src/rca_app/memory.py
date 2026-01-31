@@ -238,15 +238,21 @@ Instructions:
 
 
 def format_conversation(history: List[BaseMessage]) -> str:
+    if not history:
+        return "No prior conversation."
+
     conversation = []
     for message in history:
+        if not message:
+            continue
         role = ""
         content = ""
         if isinstance(message, (BaseMessage, HumanMessage, AIMessage)):
             role = message.type.upper()
             content = message.content
         conversation.append(f"{role}: {content}")
-    return "\n".join(conversation)
+
+    return "\n".join(conversation) if conversation else "No prior conversation."
 
 
 def mark_memory_useful(memories: List[Any]) -> None:
