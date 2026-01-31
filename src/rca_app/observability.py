@@ -27,7 +27,13 @@ def build_langfuse_callbacks(
         logger.warning("Langfuse enabled but package is not installed; disabling callbacks.")
         return []
 
-    from langfuse.callback import CallbackHandler
+    try:
+        from langfuse.langchain import CallbackHandler
+    except ModuleNotFoundError:
+        logger.warning(
+            "Langfuse enabled but callback module is unavailable; disabling callbacks."
+        )
+        return []
 
     handler_kwargs: Dict[str, Any] = {
         "public_key": config.langfuse_public_key,
