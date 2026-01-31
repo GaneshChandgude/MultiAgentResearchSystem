@@ -14,6 +14,26 @@ logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
 
 
+def _langfuse_verify_setting(config: AppConfig) -> bool | str:
+    if config.langfuse_ca_bundle:
+        return config.langfuse_ca_bundle
+    return config.langfuse_verify_ssl
+
+
+def _build_langfuse_httpx_client(config: AppConfig) -> Any | None:
+    verify_setting = _langfuse_verify_setting(config)
+    if verify_setting is True:
+        return None
+    try:
+        import httpx
+    except ModuleNotFoundError:
+        logger.warning(
+            "Langfuse configured with SSL verification overrides but httpx is missing."
+        )
+        return None
+    return httpx.Client(verify=verify_setting)
+
+
 def build_langfuse_callbacks(
     config: AppConfig,
     user_id: str | None = None,
@@ -44,6 +64,9 @@ def build_langfuse_callbacks(
         "host": config.langfuse_host,
         "debug": config.langfuse_debug,
     }
+    httpx_client = _build_langfuse_httpx_client(config)
+    if httpx_client is not None:
+        handler_kwargs["httpx_client"] = httpx_client
     if config.langfuse_release:
         handler_kwargs["release"] = config.langfuse_release
     if user_id:
@@ -88,6 +111,9 @@ def build_langfuse_client(config: AppConfig):
         "host": config.langfuse_host,
         "debug": config.langfuse_debug,
     }
+    httpx_client = _build_langfuse_httpx_client(config)
+    if httpx_client is not None:
+        client_kwargs["httpx_client"] = httpx_client
     if config.langfuse_release:
         client_kwargs["release"] = config.langfuse_release
     return Langfuse(**client_kwargs)
