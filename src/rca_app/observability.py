@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 from langchain_core.callbacks import BaseCallbackHandler
@@ -52,7 +54,19 @@ def build_langfuse_callbacks(
     if tags:
         handler_kwargs["tags"] = tags
 
-    return [CallbackHandler(**handler_kwargs)]
+    supported_params = set(inspect.signature(CallbackHandler).parameters)
+    filtered_kwargs = {key: value for key, value in handler_kwargs.items() if key in supported_params}
+    if filtered_kwargs.keys() != handler_kwargs.keys():
+        os.environ.setdefault("LANGFUSE_PUBLIC_KEY", config.langfuse_public_key)
+        os.environ.setdefault("LANGFUSE_SECRET_KEY", config.langfuse_secret_key)
+        os.environ.setdefault("LANGFUSE_HOST", config.langfuse_host)
+        os.environ.setdefault("LANGFUSE_RELEASE", config.langfuse_release)
+        os.environ.setdefault("LANGFUSE_DEBUG", str(config.langfuse_debug).lower())
+        logger.debug(
+            "Langfuse callback args filtered to %s based on installed handler signature.",
+            ", ".join(sorted(filtered_kwargs)) or "<none>",
+        )
+    return [CallbackHandler(**filtered_kwargs)]
 
 
 def build_langfuse_client(config: AppConfig):
