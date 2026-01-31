@@ -368,23 +368,29 @@ function TracePanel({ trace }) {
   );
 }
 
-function FeedbackCard({ userId, chatId, onSubmitted }) {
-  const [rating, setRating] = useState(0);
+function ResponseActions({ userId, message }) {
+  const [rating, setRating] = useState(null);
   const [comments, setComments] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
-  const selected = rating ? (rating === 5 ? "up" : "down") : null;
+  const [showTrace, setShowTrace] = useState(false);
+  const selected = rating ? (rating === "up" ? "up" : "down") : null;
+  const canSubmit = !!message.chatId && !sending && !sent;
 
-  const submit = async () => {
-    if (!rating || !chatId) return;
+  const sendFeedback = async (nextRating, nextComments = "") => {
+    if (!message.chatId || sent) return;
     setSending(true);
     try {
       await apiRequest("/api/feedback", {
         method: "POST",
-        body: JSON.stringify({ user_id: userId, chat_id: chatId, rating, comments })
+        body: JSON.stringify({
+          user_id: userId,
+          chat_id: message.chatId,
+          rating: nextRating === "up" ? 5 : 1,
+          comments: nextComments
+        })
       });
       setSent(true);
-      onSubmitted?.();
     } catch (err) {
       console.error(err);
     } finally {
@@ -392,37 +398,71 @@ function FeedbackCard({ userId, chatId, onSubmitted }) {
     }
   };
 
+  const handleLike = () => {
+    if (!canSubmit) return;
+    setRating("up");
+    sendFeedback("up");
+  };
+
+  const handleDislike = () => {
+    if (sent) return;
+    setRating("down");
+  };
+
+  const submitDislike = () => {
+    if (!canSubmit || rating !== "down") return;
+    sendFeedback("down", comments);
+  };
+
   return (
-    <div className="feedback-card">
-      <h4>Was this response helpful?</h4>
-      <p style={{ marginTop: "4px", color: "#475569" }}>
-        Capture quick feedback to improve future RCA recommendations.
-      </p>
+    <div className="response-actions">
       <div className="feedback-actions">
         <button
           type="button"
           className={`icon-button ${selected === "up" ? "active" : ""}`}
-          onClick={() => setRating(5)}
-          disabled={sent}
+          onClick={handleLike}
+          disabled={!canSubmit}
         >
           👍
         </button>
         <button
           type="button"
           className={`icon-button ${selected === "down" ? "active" : ""}`}
-          onClick={() => setRating(1)}
+          onClick={handleDislike}
           disabled={sent}
         >
           👎
         </button>
+        <button
+          type="button"
+          className="trace-toggle"
+          onClick={() => setShowTrace((prev) => !prev)}
+          disabled={!message.trace}
+        >
+          {showTrace ? "Hide agentic trace" : "Agentic trace"}
+        </button>
       </div>
-      <div className="input-group">
-        <label>Optional notes</label>
-        <textarea value={comments} onChange={(event) => setComments(event.target.value)} />
-      </div>
-      <button className="btn btn-primary" onClick={submit} disabled={sending || sent}>
-        {sent ? "Feedback captured" : sending ? "Sending..." : "Submit feedback"}
-      </button>
+      {rating === "down" && !sent ? (
+        <div className="feedback-form">
+          <div className="input-group">
+            <label>What went wrong?</label>
+            <textarea
+              value={comments}
+              onChange={(event) => setComments(event.target.value)}
+              placeholder="Share details to help us improve the response."
+            />
+          </div>
+          <button className="btn btn-primary" onClick={submitDislike} disabled={!canSubmit}>
+            {sending ? "Sending..." : "Submit feedback"}
+          </button>
+        </div>
+      ) : null}
+      {sent ? <span className="feedback-status">Thanks for the feedback.</span> : null}
+      {showTrace ? (
+        <div className="trace-inline">
+          <TracePanel trace={message.trace} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -432,8 +472,6 @@ function ChatScreen({ user }) {
   const [input, setInput] = useState("");
   const [job, setJob] = useState(null);
   const [progress, setProgress] = useState(null);
-  const [trace, setTrace] = useState(null);
-  const [activeChatId, setActiveChatId] = useState(null);
 
   useEffect(() => {
     apiRequest(`/api/chats/${user.user_id}`)
@@ -466,8 +504,6 @@ function ChatScreen({ user }) {
               id: `${result.chat_id}-a`
             }
           ]);
-          setTrace(result.trace);
-          setActiveChatId(result.chat_id);
           setJob(null);
           setProgress(null);
         }
@@ -518,19 +554,17 @@ function ChatScreen({ user }) {
               <div
                 key={msg.id}
                 className={`message-row ${msg.role === "user" ? "user" : "assistant"}`}
-                onClick={() => {
-                  if (msg.trace) {
-                    setTrace(msg.trace);
-                    setActiveChatId(msg.chatId);
-                  }
-                }}
-                role="button"
               >
                 <div className={`message-avatar ${msg.role === "user" ? "user" : "assistant"}`}>
                   {msg.role === "user" ? "You" : "AI"}
                 </div>
-                <div className={`message ${msg.role === "user" ? "user" : "assistant"}`}>
-                  {msg.content}
+                <div className="message-stack">
+                  <div className={`message ${msg.role === "user" ? "user" : "assistant"}`}>
+                    {msg.content}
+                  </div>
+                  {msg.role === "assistant" ? (
+                    <ResponseActions userId={user.user_id} message={msg} />
+                  ) : null}
                 </div>
               </div>
             ))}
@@ -563,62 +597,15 @@ function ChatScreen({ user }) {
               {job ? "Working..." : "Send"}
             </button>
           </div>
-          {activeChatId ? (
-            <FeedbackCard
-              userId={user.user_id}
-              chatId={activeChatId}
-              onSubmitted={() => undefined}
-            />
-          ) : null}
-        </div>
-      </div>
-      <div>
-        <div className="card">
-          <h3 className="trace-title">
-            <span className="trace-icon" aria-hidden="true">
-              🧭
-            </span>
-            Agentic trace
-          </h3>
-          <p style={{ marginTop: "4px", color: "#475569" }}>
-            Click any assistant response to inspect how each agent reasoned through the task.
-          </p>
-          <div style={{ marginTop: "12px" }}>
-            <TracePanel trace={trace} />
-          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function Sidebar({ user, step }) {
-  return (
-    <aside className="sidebar">
-      <h2>RCA Ops Hub</h2>
-      <section>
-        <div className="status-pill">Session active</div>
-        <p style={{ marginTop: "12px", color: "#94a3b8" }}>{user.username}</p>
-      </section>
-      <section>
-        <h4 style={{ marginBottom: "8px" }}>Workspace</h4>
-        <ul style={{ listStyle: "none", display: "grid", gap: "8px" }}>
-          <li className="badge">Login</li>
-          <li className="badge">Configuration</li>
-          <li className="badge">Chat assistant</li>
-        </ul>
-        <p style={{ marginTop: "12px", color: "#94a3b8" }}>
-          Current stage: <strong>{step}</strong>
-        </p>
-      </section>
-    </aside>
-  );
-}
-
 export default function App() {
   const [user, setUser] = useState(null);
   const [config, setConfig] = useState(emptyConfig);
-  const [step] = useState("Conversation");
   const [showConfig, setShowConfig] = useState(false);
   const [configSection, setConfigSection] = useState("llm");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -661,7 +648,6 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar user={user} step={step} />
       <main className="container">
         <div className="topbar">
           <div>
