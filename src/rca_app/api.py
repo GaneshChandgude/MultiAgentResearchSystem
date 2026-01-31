@@ -29,6 +29,7 @@ app.add_middleware(
 store = UIStore(resolve_data_dir() / "rca_ui.db")
 _app_cache: Dict[str, Any] = {}
 _session_cache: Dict[str, Dict[str, Any]] = {}
+_pending_persistence: set[str] = set()
 
 
 class LoginRequest(BaseModel):
@@ -153,6 +154,7 @@ def _persist_memories(user_id: str) -> None:
     used_semantic = semantic_recall(last_state["task"], rca_app.store, last_config)
     mark_memory_useful(used_semantic)
     _session_cache.pop(user_id, None)
+    _pending_persistence.discard(user_id)
 
 
 def _run_job(job_id: str, user_id: str, query: str) -> None:
@@ -170,6 +172,11 @@ def _run_job(job_id: str, user_id: str, query: str) -> None:
             "config": {"configurable": {"user_id": user_id, "thread_id": job_id}},
             "last_query": query,
         }
+
+        if user_id in _pending_persistence:
+            logger.info("Processing deferred memory persistence for user_id=%s", user_id)
+            _pending_persistence.discard(user_id)
+            _persist_memories(user_id)
 
         response = result.get("output", "")
         trace = result.get("trace", [])
@@ -206,7 +213,17 @@ async def login(payload: LoginRequest) -> LoginResponse:
 
 @app.post("/api/logout")
 async def logout(payload: LogoutRequest, background_tasks: BackgroundTasks) -> Dict[str, str]:
-    background_tasks.add_task(_persist_memories, payload.user_id)
+    logger.info("Logout requested for user_id=%s", payload.user_id)
+    if payload.user_id in _session_cache:
+        background_tasks.add_task(_persist_memories, payload.user_id)
+    elif store.has_active_job(payload.user_id):
+        logger.info(
+            "Logout requested while job is still running for user_id=%s; deferring memory persistence",
+            payload.user_id,
+        )
+        _pending_persistence.add(payload.user_id)
+    else:
+        logger.info("No active session found for user_id=%s; skipping memory persistence", payload.user_id)
     return {"status": "logged_out"}
 
 

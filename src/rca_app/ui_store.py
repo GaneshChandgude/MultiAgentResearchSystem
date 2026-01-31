@@ -166,6 +166,18 @@ class UIStore:
             "updated_at": row[8],
         }
 
+    def has_active_job(self, user_id: str) -> bool:
+        cursor = self._conn.execute(
+            """
+            SELECT 1
+            FROM jobs
+            WHERE user_id = ? AND status IN ('queued', 'running')
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+        return cursor.fetchone() is not None
+
     def save_chat(self, user_id: str, query: str, response: str, trace: Any) -> str:
         chat_id = str(uuid4())
         with self._conn:
