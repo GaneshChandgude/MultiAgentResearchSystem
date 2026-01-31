@@ -10,6 +10,7 @@ from threading import Lock
 from typing import Any, Dict, List
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver, PersistentDict
 from langgraph.store.base import BaseStore
 
@@ -90,8 +91,9 @@ class DiskBackedCheckpointer(InMemorySaver):
         self._sync()
 
 
-class MultiUserCheckpointer:
+class MultiUserCheckpointer(BaseCheckpointSaver):
     def __init__(self, base_dir: Path) -> None:
+        super().__init__()
         self._base_dir = base_dir
         self._lock = Lock()
         self._checkpointers: Dict[str, DiskBackedCheckpointer] = {}
@@ -127,8 +129,38 @@ class MultiUserCheckpointer:
         for checkpointer in self._checkpointers.values():
             checkpointer.delete_thread(thread_id)
 
-    def list(self, config, *, limit=None, before=None):
-        return self._for_config(config).list(config, limit=limit, before=before)
+    def list(self, config, *, limit=None, before=None, filter=None):
+        if config is None:
+            remaining = limit
+            for checkpointer in self._checkpointers.values():
+                for item in checkpointer.list(
+                    None, limit=remaining, before=before, filter=filter
+                ):
+                    yield item
+                    if remaining is not None:
+                        remaining -= 1
+                        if remaining <= 0:
+                            return
+            return
+        yield from self._for_config(config).list(
+            config, limit=limit, before=before, filter=filter
+        )
+
+    async def aget_tuple(self, config):
+        return self.get_tuple(config)
+
+    async def alist(self, config, *, limit=None, before=None, filter=None):
+        for item in self.list(config, limit=limit, before=before, filter=filter):
+            yield item
+
+    async def aput(self, config, checkpoint, metadata, new_versions):
+        return self.put(config, checkpoint, metadata, new_versions)
+
+    async def aput_writes(self, config, writes, task_id, task_path=""):
+        return self.put_writes(config, writes, task_id, task_path=task_path)
+
+    async def adelete_thread(self, thread_id: str) -> None:
+        return self.delete_thread(thread_id)
 
 
 def setup_memory(config: AppConfig) -> MemoryStores:
