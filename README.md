@@ -42,6 +42,7 @@ The system autonomously:
 │       ├── __main__.py
 │       ├── agents.py
 │       ├── app.py
+│       ├── api.py
 │       ├── cli.py
 │       ├── config.py
 │       ├── data.py
@@ -59,7 +60,16 @@ The system autonomously:
 │       ├── toolset_registry.py
 │       ├── toolsets.py
 │       ├── types.py
+│       ├── ui_store.py
 │       └── utils.py
+├── frontend/
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.js
+│   └── src/
+│       ├── App.jsx
+│       ├── main.jsx
+│       └── styles.css
 ├── traces.txt
 ├── pyproject.toml
 └── requirements.txt
@@ -157,6 +167,24 @@ Investigate why stores are experiencing stockouts during an active promotion.
 ```bash
 rca-app chat
 ```
+
+### API + UI workflow
+
+1. Start the FastAPI service:
+
+```bash
+uvicorn rca_app.api:app --host 0.0.0.0 --port 8000
+```
+
+2. In a separate terminal, install and run the React UI:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+3. Open `http://localhost:5173` to access the RCA command center.
 
 You can also run directly with Python:
 
