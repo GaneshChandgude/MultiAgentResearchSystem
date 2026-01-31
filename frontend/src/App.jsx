@@ -600,6 +600,14 @@ function ChatScreen({ user }) {
     setProgress({ status: "queued", progress: 5, message: "Queued" });
   };
 
+  const handleKeyDown = (event) => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    event.preventDefault();
+    if (!job) {
+      send();
+    }
+  };
+
   return (
     <div className="chat-layout">
       <div>
@@ -653,14 +661,20 @@ function ChatScreen({ user }) {
             </div>
           ) : null}
           <div className="chat-input">
-            <textarea
-              placeholder="Describe the issue to analyze..."
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-            />
-            <button className="btn btn-primary" onClick={send} disabled={!!job}>
-              {job ? "Working..." : "Send"}
-            </button>
+            <div className="chat-input-main">
+              <textarea
+                placeholder="Describe the issue to analyze..."
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={handleKeyDown}
+              />
+              <button className="btn btn-primary" onClick={send} disabled={!!job}>
+                {job ? "Working..." : "Send"}
+              </button>
+            </div>
+            <div className="chat-input-meta">
+              Press Enter to send. Use Shift + Enter for a new line.
+            </div>
           </div>
         </div>
       </div>
