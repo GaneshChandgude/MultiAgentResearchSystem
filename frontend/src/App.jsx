@@ -95,11 +95,19 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-function ConfigWizard({ config, setConfig, user, onComplete }) {
+function ConfigWizard({ config, setConfig, user, initialKey, onClose }) {
   const [activeStep, setActiveStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [savedSteps, setSavedSteps] = useState({});
+
+  useEffect(() => {
+    if (!initialKey) return;
+    const index = configSteps.findIndex((step) => step.key === initialKey);
+    if (index >= 0) {
+      setActiveStep(index);
+    }
+  }, [initialKey]);
 
   const currentKey = configSteps[activeStep].key;
 
@@ -134,6 +142,8 @@ function ConfigWizard({ config, setConfig, user, onComplete }) {
           <span
             key={step.key}
             className={`step ${index === activeStep ? "active" : ""}`}
+            role="button"
+            onClick={() => setActiveStep(index)}
           >
             {step.label}
           </span>
@@ -299,26 +309,15 @@ function ConfigWizard({ config, setConfig, user, onComplete }) {
         <button className="btn btn-primary" onClick={saveCurrent} disabled={saving}>
           {saving ? "Saving..." : "Save configuration"}
         </button>
-        <button
-          className="btn btn-secondary"
-          onClick={() => setActiveStep(Math.max(activeStep - 1, 0))}
-          disabled={activeStep === 0}
-        >
-          Back
-        </button>
-        <button
-          className="btn btn-outline"
-          onClick={() => setActiveStep(Math.min(activeStep + 1, configSteps.length - 1))}
-          disabled={activeStep === configSteps.length - 1}
-        >
-          Next
+        <button className="btn btn-outline" onClick={onClose}>
+          Close
         </button>
       </div>
       <div style={{ marginTop: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
         <span className="badge">Saved: {savedSteps[currentKey] ? "Yes" : "No"}</span>
-        <button className="btn btn-primary" onClick={onComplete}>
-          Continue to assistant
-        </button>
+        <span style={{ fontSize: "12px", color: "#64748b" }}>
+          Switch tabs to configure other services.
+        </span>
       </div>
     </div>
   );
@@ -374,6 +373,7 @@ function FeedbackCard({ userId, chatId, onSubmitted }) {
   const [comments, setComments] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const selected = rating ? (rating === 5 ? "up" : "down") : null;
 
   const submit = async () => {
     if (!rating || !chatId) return;
@@ -394,24 +394,30 @@ function FeedbackCard({ userId, chatId, onSubmitted }) {
 
   return (
     <div className="feedback-card">
-      <h4>Feedback loop</h4>
+      <h4>Was this response helpful?</h4>
       <p style={{ marginTop: "4px", color: "#475569" }}>
-        Help the RCA agents learn by rating the response.
+        Capture quick feedback to improve future RCA recommendations.
       </p>
       <div className="feedback-actions">
-        {[1, 2, 3, 4, 5].map((value) => (
-          <button
-            key={value}
-            className={`btn ${rating === value ? "btn-primary" : "btn-secondary"}`}
-            type="button"
-            onClick={() => setRating(value)}
-          >
-            {value}
-          </button>
-        ))}
+        <button
+          type="button"
+          className={`icon-button ${selected === "up" ? "active" : ""}`}
+          onClick={() => setRating(5)}
+          disabled={sent}
+        >
+          👍
+        </button>
+        <button
+          type="button"
+          className={`icon-button ${selected === "down" ? "active" : ""}`}
+          onClick={() => setRating(1)}
+          disabled={sent}
+        >
+          👎
+        </button>
       </div>
       <div className="input-group">
-        <label>Comments</label>
+        <label>Optional notes</label>
         <textarea value={comments} onChange={(event) => setComments(event.target.value)} />
       </div>
       <button className="btn btn-primary" onClick={submit} disabled={sending || sent}>
@@ -463,6 +469,7 @@ function ChatScreen({ user }) {
           setTrace(result.trace);
           setActiveChatId(result.chat_id);
           setJob(null);
+          setProgress(null);
         }
         if (status.status === "failed") {
           setMessages((prev) => [
@@ -470,6 +477,7 @@ function ChatScreen({ user }) {
             { role: "assistant", content: `Error: ${status.message}`, id: `${status.id}-err` }
           ]);
           setJob(null);
+          setProgress(null);
         }
       } catch (err) {
         console.error(err);
@@ -500,11 +508,16 @@ function ChatScreen({ user }) {
             Ask a question about inventory, sales, or operational anomalies. The assistant will
             coordinate agents and return an RCA narrative with supporting reasoning.
           </p>
+          {progress ? (
+            <div className="progress-inline" style={{ marginTop: "16px" }}>
+              <span style={{ width: `${progress.progress}%` }} />
+            </div>
+          ) : null}
           <div className="chat-window" style={{ marginTop: "24px" }}>
             {messages.map((msg) => (
               <div
                 key={msg.id}
-                className={`message ${msg.role === "user" ? "user" : "assistant"}`}
+                className={`message-row ${msg.role === "user" ? "user" : "assistant"}`}
                 onClick={() => {
                   if (msg.trace) {
                     setTrace(msg.trace);
@@ -513,19 +526,31 @@ function ChatScreen({ user }) {
                 }}
                 role="button"
               >
-                {msg.content}
+                <div className={`message-avatar ${msg.role === "user" ? "user" : "assistant"}`}>
+                  {msg.role === "user" ? "You" : "AI"}
+                </div>
+                <div className={`message ${msg.role === "user" ? "user" : "assistant"}`}>
+                  {msg.content}
+                </div>
               </div>
             ))}
+            {job ? (
+              <div className="message-row assistant">
+                <div className="message-avatar assistant">AI</div>
+                <div className="message assistant">
+                  <div className="typing-indicator">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
           {progress ? (
-            <div className="progress-card" style={{ marginTop: "16px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span>{progress.message}</span>
-                <strong>{progress.progress}%</strong>
-              </div>
-              <div className="progress-bar">
-                <span style={{ width: `${progress.progress}%` }} />
-              </div>
+            <div className="progress-meta">
+              <span>{progress.message}</span>
+              <strong>{progress.progress}%</strong>
             </div>
           ) : null}
           <div className="chat-input">
@@ -549,7 +574,12 @@ function ChatScreen({ user }) {
       </div>
       <div>
         <div className="card">
-          <h3>Agentic trace</h3>
+          <h3 className="trace-title">
+            <span className="trace-icon" aria-hidden="true">
+              🧭
+            </span>
+            Agentic trace
+          </h3>
           <p style={{ marginTop: "4px", color: "#475569" }}>
             Click any assistant response to inspect how each agent reasoned through the task.
           </p>
@@ -588,7 +618,10 @@ function Sidebar({ user, step }) {
 export default function App() {
   const [user, setUser] = useState(null);
   const [config, setConfig] = useState(emptyConfig);
-  const [step, setStep] = useState("Configuration");
+  const [step] = useState("Conversation");
+  const [showConfig, setShowConfig] = useState(false);
+  const [configSection, setConfigSection] = useState("llm");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -610,20 +643,77 @@ export default function App() {
     return <LoginScreen onLogin={(data) => setUser(data)} />;
   }
 
+  const handleLogout = async () => {
+    try {
+      await apiRequest("/api/logout", {
+        method: "POST",
+        body: JSON.stringify({ user_id: user.user_id })
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setUser(null);
+      setConfig(emptyConfig);
+      setShowConfig(false);
+      setSettingsOpen(false);
+    }
+  };
+
   return (
     <div className="app-shell">
       <Sidebar user={user} step={step} />
       <main className="container">
-        {step === "Configuration" ? (
-          <ConfigWizard
-            config={config}
-            setConfig={setConfig}
-            user={user}
-            onComplete={() => setStep("Chat")}
-          />
-        ) : (
-          <ChatScreen user={user} />
-        )}
+        <div className="topbar">
+          <div>
+            <h1>Conversation workspace</h1>
+            <p>Interact with the RCA assistant and inspect traces in real time.</p>
+          </div>
+          <div className="topbar-actions">
+            <div className="settings-menu">
+              <button
+                className="btn btn-secondary"
+                type="button"
+                onClick={() => setSettingsOpen((prev) => !prev)}
+              >
+                ⚙️ Settings
+              </button>
+              {settingsOpen ? (
+                <div className="settings-dropdown">
+                  {configSteps.map((stepItem) => (
+                    <button
+                      key={stepItem.key}
+                      type="button"
+                      onClick={() => {
+                        setConfigSection(stepItem.key);
+                        setShowConfig(true);
+                        setSettingsOpen(false);
+                      }}
+                    >
+                      {stepItem.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <button className="btn btn-outline" type="button" onClick={handleLogout}>
+              Log out
+            </button>
+          </div>
+        </div>
+        <ChatScreen user={user} />
+        {showConfig ? (
+          <div className="modal-backdrop" role="dialog" aria-modal="true">
+            <div className="modal-card">
+              <ConfigWizard
+                config={config}
+                setConfig={setConfig}
+                user={user}
+                initialKey={configSection}
+                onClose={() => setShowConfig(false)}
+              />
+            </div>
+          </div>
+        ) : null}
       </main>
     </div>
   );
