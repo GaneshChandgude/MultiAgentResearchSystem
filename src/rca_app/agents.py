@@ -454,7 +454,7 @@ Inventory insights:
             tags=["ValidationAgent"],
             metadata={
                 "agent": "ValidationAgent",
-                "task_length": len(task),
+                "task_length": len(str(hypotheses)),
                 "hypothesis_count": len(hypotheses),
             },
         )
@@ -562,7 +562,7 @@ Prior trace:
             tags=["RootCauseAgent"],
             metadata={
                 "agent": "RootCauseAgent",
-                "task_length": len(task),
+                "task_length": len(str(validated_hypotheses)),
                 "trace_steps": len(trace),
             },
         )
@@ -653,7 +653,7 @@ Use the following structured RCA output:
             user_id=user_id,
             query_id=query_id,
             tags=["ReportAgent"],
-            metadata={"agent": "ReportAgent", "task_length": len(task)},
+            metadata={"agent": "ReportAgent", "task_length": len(f"{root_cause}{reasoning}")},
         )
         tool_config = {
             "configurable": {"user_id": user_id, "thread_id": query_id},
