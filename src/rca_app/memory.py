@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from collections import defaultdict
 from pathlib import Path
 from contextlib import ExitStack
+from threading import Lock
 from typing import Any, Dict, List
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -30,6 +31,7 @@ class DiskBackedCheckpointer(InMemorySaver):
     def __init__(self, base_dir: Path) -> None:
         super().__init__()
         base_dir.mkdir(parents=True, exist_ok=True)
+        self._sync_lock = Lock()
         self._storage_path = base_dir / "checkpointer_storage.pkl"
         self._writes_path = base_dir / "checkpointer_writes.pkl"
         self._blobs_path = base_dir / "checkpointer_blobs.pkl"
@@ -51,8 +53,28 @@ class DiskBackedCheckpointer(InMemorySaver):
         logger.info("Loaded disk-backed checkpoints from %s", self._storage_path.parent)
 
     def _sync(self) -> None:
-        for store in (self.storage, self.writes, self.blobs):
-            store.sync()
+        with self._sync_lock:
+            for store in (self.storage, self.writes, self.blobs):
+                self._sync_store(store)
+
+    def _sync_store(self, store: PersistentDict, retries: int = 3, delay: float = 0.05) -> None:
+        last_error = None
+        for attempt in range(1, retries + 1):
+            try:
+                store.sync()
+                return
+            except (FileExistsError, FileNotFoundError) as exc:
+                last_error = exc
+                logger.warning(
+                    "Checkpoint sync retry %s/%s for %s due to %s",
+                    attempt,
+                    retries,
+                    store.filename,
+                    exc,
+                )
+                time.sleep(delay * attempt)
+        if last_error:
+            raise last_error
 
     def put(self, config, checkpoint, metadata, new_versions):
         updated = super().put(config, checkpoint, metadata, new_versions)
