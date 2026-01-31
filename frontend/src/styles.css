@@ -17,37 +17,8 @@ body {
 }
 
 .app-shell {
-  display: grid;
-  grid-template-columns: 280px 1fr;
+  display: block;
   min-height: 100vh;
-}
-
-.sidebar {
-  background: #111827;
-  color: #e2e8f0;
-  padding: 24px;
-  border-right: 1px solid #1f2937;
-}
-
-.sidebar h2 {
-  font-size: 20px;
-  margin-bottom: 16px;
-}
-
-.sidebar section {
-  margin-bottom: 24px;
-}
-
-.sidebar .status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(59, 130, 246, 0.2);
-  color: #93c5fd;
-  font-size: 12px;
-  font-weight: 600;
 }
 
 .container {
@@ -239,8 +210,8 @@ body {
 }
 
 .chat-layout {
-  display: grid;
-  grid-template-columns: 1fr 320px;
+  display: flex;
+  flex-direction: column;
   gap: 24px;
 }
 
@@ -257,6 +228,13 @@ body {
   display: flex;
   gap: 12px;
   align-items: flex-start;
+}
+
+.message-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
 }
 
 .message-row.user {
@@ -404,18 +382,9 @@ body {
   border-radius: 10px;
 }
 
-.feedback-card {
-  margin-top: 16px;
-  padding: 16px;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  background: #fff;
-}
-
 .feedback-actions {
   display: flex;
   gap: 8px;
-  margin-bottom: 12px;
 }
 
 .icon-button {
@@ -431,6 +400,49 @@ body {
 .icon-button.active {
   border-color: #2563eb;
   background: rgba(37, 99, 235, 0.12);
+}
+
+.response-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 4px;
+}
+
+.trace-toggle {
+  border-radius: 999px;
+  border: 1px solid #cbd5f5;
+  background: #f8fafc;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #0f172a;
+}
+
+.trace-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.feedback-form {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.feedback-status {
+  font-size: 12px;
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.trace-inline {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fafc;
 }
 
 .chat-input {
@@ -453,17 +465,8 @@ body {
 }
 
 @media (max-width: 1024px) {
-  .app-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    border-right: none;
-    border-bottom: 1px solid #1f2937;
-  }
-
   .chat-layout {
-    grid-template-columns: 1fr;
+    gap: 20px;
   }
 
   .topbar {
