@@ -9,6 +9,7 @@ from .config import AppConfig
 from .data import load_inventory, load_sales
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 inventory_mcp_server = FastMCP("InventoryMCPServer")
 _inventory_config: AppConfig | None = None

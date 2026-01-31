@@ -14,6 +14,7 @@ from .observability import build_langfuse_invoke_config
 from .types import RCAState
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 @dataclass
 class RCAApp:

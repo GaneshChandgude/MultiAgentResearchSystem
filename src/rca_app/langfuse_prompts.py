@@ -12,6 +12,7 @@ from urllib3.exceptions import InsecureRequestWarning
 from .config import AppConfig
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 
 ORCHESTRATION_AGENT_PROMPT = """

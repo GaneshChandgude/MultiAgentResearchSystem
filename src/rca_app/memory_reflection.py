@@ -14,6 +14,7 @@ from .memory import format_conversation
 from .observability import build_langfuse_invoke_config
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 
 def build_reflection_chain(llm, app_config: AppConfig):

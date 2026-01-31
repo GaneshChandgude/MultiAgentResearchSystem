@@ -11,6 +11,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 from .config import AppConfig
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 
 def build_langfuse_callbacks(

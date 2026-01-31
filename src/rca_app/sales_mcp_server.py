@@ -8,6 +8,7 @@ from .config import AppConfig
 from .data import load_sales
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 sales_mcp_server = FastMCP("SalesMCPServer")
 _sales_config: AppConfig | None = None

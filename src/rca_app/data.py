@@ -7,6 +7,7 @@ import pandas as pd
 from .config import AppConfig
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 
 def sales_path(config: AppConfig) -> Path:

@@ -8,6 +8,7 @@ from .app import RCAApp
 from .observability import build_langfuse_client, build_langfuse_invoke_config
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 
 TOOL_TO_AGENT = {

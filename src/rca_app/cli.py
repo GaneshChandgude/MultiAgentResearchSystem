@@ -15,6 +15,7 @@ from .memory_reflection import add_episodic_memory, add_procedural_memory, build
 from .observability import build_langfuse_invoke_config
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 DEFAULT_LOG_FILE = "rca_app.log"
 DEFAULT_LOG_LEVEL = "INFO"

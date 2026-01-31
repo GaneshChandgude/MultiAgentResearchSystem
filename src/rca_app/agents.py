@@ -20,6 +20,7 @@ from .types import RCAState
 from .utils import filter_tool_messages, handle_tool_errors, process_response, serialize_messages
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 def build_hypothesis_tool(config: AppConfig, store, checkpointer, llm):
     hypothesis_react_agent = create_agent(

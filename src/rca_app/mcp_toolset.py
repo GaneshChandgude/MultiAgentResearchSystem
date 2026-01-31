@@ -11,6 +11,7 @@ from pydantic import BaseModel, create_model
 from .toolset_registry import Toolset
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 
 def _normalize_sse_url(base_url: str) -> str:

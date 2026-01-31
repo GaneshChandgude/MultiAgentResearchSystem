@@ -14,6 +14,7 @@ from .llm import get_embeddings
 from .persistent_store import SQLiteBackedStore
 
 logger = logging.getLogger(__name__)
+logger.debug("Loaded module %s", __name__)
 
 
 @dataclass
