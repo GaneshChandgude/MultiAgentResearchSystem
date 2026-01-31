@@ -9,6 +9,7 @@ description = "Autonomous RCA agent for retail operations"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+  "fastapi",
   "langchain",
   "langchain-core",
   "langchain-community",
@@ -20,6 +21,7 @@ dependencies = [
   "pandas",
   "pydantic",
   "requests",
+  "uvicorn",
 ]
 
 [project.scripts]

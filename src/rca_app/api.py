@@ -1,0 +1,243 @@
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import asdict, replace
+from typing import Any, Dict, Optional
+
+from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+from .app import build_app, run_rca
+from .config import AppConfig, load_config, resolve_data_dir
+from .ui_store import UIStore
+
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="RCA Assistant API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+store = UIStore(resolve_data_dir() / "rca_ui.db")
+_app_cache: Dict[str, Any] = {}
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1)
+
+
+class LoginResponse(BaseModel):
+    user_id: str
+    username: str
+
+
+class LLMConfigRequest(BaseModel):
+    user_id: str
+    azure_openai_endpoint: str
+    azure_openai_api_key: str
+    azure_openai_deployment: str
+    azure_openai_api_version: str
+
+
+class EmbedderConfigRequest(BaseModel):
+    user_id: str
+    embeddings_model: str
+    embeddings_endpoint: str
+    embeddings_api_key: str
+    embeddings_api_version: str
+
+
+class LangfuseConfigRequest(BaseModel):
+    user_id: str
+    langfuse_enabled: bool
+    langfuse_public_key: str
+    langfuse_secret_key: str
+    langfuse_host: str
+    langfuse_release: str
+    langfuse_debug: bool
+    langfuse_prompt_enabled: bool
+    langfuse_prompt_label: str
+    langfuse_verify_ssl: bool
+    langfuse_ca_bundle: str
+
+
+class ChatStartRequest(BaseModel):
+    user_id: str
+    query: str
+
+
+class FeedbackRequest(BaseModel):
+    user_id: str
+    chat_id: str
+    rating: int = Field(..., ge=1, le=5)
+    comments: Optional[str] = None
+
+
+class ConfigResponse(BaseModel):
+    llm: Dict[str, Any]
+    embedder: Dict[str, Any]
+    langfuse: Dict[str, Any]
+
+
+def _config_key(config: AppConfig) -> str:
+    payload = asdict(config)
+    payload["data_dir"] = str(payload["data_dir"])
+    return json.dumps(payload, sort_keys=True)
+
+
+def _build_user_config(user_id: str) -> AppConfig:
+    base_config = load_config()
+    overrides = store.get_config(user_id)
+    updates: Dict[str, Any] = {}
+
+    llm = overrides.get("llm", {})
+    embedder = overrides.get("embedder", {})
+    langfuse = overrides.get("langfuse", {})
+
+    updates.update({k: v for k, v in llm.items() if v})
+    updates.update({k: v for k, v in embedder.items() if v})
+    updates.update(langfuse)
+
+    return replace(base_config, **updates)
+
+
+def _get_rca_app(config: AppConfig):
+    key = _config_key(config)
+    if key not in _app_cache:
+        logger.info("Building RCA app for config hash=%s", hash(key))
+        _app_cache[key] = build_app(config)
+    return _app_cache[key]
+
+
+def _run_job(job_id: str, user_id: str, query: str) -> None:
+    try:
+        store.update_job(job_id, status="running", progress=15, message="Loading configuration")
+        config = _build_user_config(user_id)
+        store.update_job(job_id, status="running", progress=35, message="Initializing RCA agents")
+        rca_app = _get_rca_app(config)
+        store.update_job(job_id, status="running", progress=60, message="Running root cause analysis")
+        result = run_rca(rca_app, query, user_id=user_id, query_id=job_id)
+        store.update_job(job_id, status="running", progress=85, message="Assembling response")
+
+        response = result.get("output", "")
+        trace = result.get("trace", [])
+        chat_id = store.save_chat(user_id, query, response, trace)
+
+        store.update_job(
+            job_id,
+            status="completed",
+            progress=100,
+            message="Complete",
+            result={"chat_id": chat_id, "response": response, "trace": trace},
+        )
+    except Exception as exc:
+        logger.exception("RCA job failed")
+        store.update_job(
+            job_id,
+            status="failed",
+            progress=100,
+            message=str(exc),
+            result={"error": str(exc)},
+        )
+
+
+@app.get("/api/health")
+async def health() -> Dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.post("/api/login", response_model=LoginResponse)
+async def login(payload: LoginRequest) -> LoginResponse:
+    user_id = store.create_user(payload.username)
+    return LoginResponse(user_id=user_id, username=payload.username)
+
+
+@app.get("/api/config/defaults", response_model=ConfigResponse)
+async def config_defaults() -> ConfigResponse:
+    base = load_config()
+    return ConfigResponse(
+        llm={
+            "azure_openai_endpoint": base.azure_openai_endpoint,
+            "azure_openai_api_key": "",
+            "azure_openai_deployment": base.azure_openai_deployment,
+            "azure_openai_api_version": base.azure_openai_api_version,
+        },
+        embedder={
+            "embeddings_model": base.embeddings_model,
+            "embeddings_endpoint": base.embeddings_endpoint,
+            "embeddings_api_key": "",
+            "embeddings_api_version": base.embeddings_api_version,
+        },
+        langfuse={
+            "langfuse_enabled": base.langfuse_enabled,
+            "langfuse_public_key": "",
+            "langfuse_secret_key": "",
+            "langfuse_host": base.langfuse_host,
+            "langfuse_release": base.langfuse_release,
+            "langfuse_debug": base.langfuse_debug,
+            "langfuse_prompt_enabled": base.langfuse_prompt_enabled,
+            "langfuse_prompt_label": base.langfuse_prompt_label,
+            "langfuse_verify_ssl": base.langfuse_verify_ssl,
+            "langfuse_ca_bundle": base.langfuse_ca_bundle,
+        },
+    )
+
+
+@app.get("/api/config/{user_id}", response_model=ConfigResponse)
+async def get_config(user_id: str) -> ConfigResponse:
+    configs = store.get_config(user_id)
+    llm = configs.get("llm", {})
+    embedder = configs.get("embedder", {})
+    langfuse = configs.get("langfuse", {})
+    return ConfigResponse(llm=llm, embedder=embedder, langfuse=langfuse)
+
+
+@app.post("/api/config/llm")
+async def set_llm_config(payload: LLMConfigRequest) -> Dict[str, str]:
+    store.upsert_config(payload.user_id, "llm", payload.model_dump(exclude={"user_id"}))
+    return {"status": "saved"}
+
+
+@app.post("/api/config/embedder")
+async def set_embedder_config(payload: EmbedderConfigRequest) -> Dict[str, str]:
+    store.upsert_config(payload.user_id, "embedder", payload.model_dump(exclude={"user_id"}))
+    return {"status": "saved"}
+
+
+@app.post("/api/config/langfuse")
+async def set_langfuse_config(payload: LangfuseConfigRequest) -> Dict[str, str]:
+    store.upsert_config(payload.user_id, "langfuse", payload.model_dump(exclude={"user_id"}))
+    return {"status": "saved"}
+
+
+@app.post("/api/chat/start")
+async def start_chat(payload: ChatStartRequest, background_tasks: BackgroundTasks) -> Dict[str, str]:
+    if not payload.query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+    job_id = store.create_job(payload.user_id, payload.query)
+    background_tasks.add_task(_run_job, job_id, payload.user_id, payload.query)
+    return {"job_id": job_id}
+
+
+@app.get("/api/chat/status/{job_id}")
+async def chat_status(job_id: str) -> Dict[str, Any]:
+    try:
+        return store.get_job(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/chats/{user_id}")
+async def list_chats(user_id: str) -> Dict[str, Any]:
+    return {"chats": store.list_chats(user_id)}
+
+
+@app.post("/api/feedback")
+async def submit_feedback(payload: FeedbackRequest) -> Dict[str, str]:
+    feedback_id = store.save_feedback(payload.chat_id, payload.user_id, payload.rating, payload.comments)
+    return {"status": "received", "feedback_id": feedback_id}

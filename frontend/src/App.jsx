@@ -1,0 +1,630 @@
+import { useEffect, useMemo, useState } from "react";
+
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+
+const emptyConfig = {
+  llm: {
+    azure_openai_endpoint: "",
+    azure_openai_api_key: "",
+    azure_openai_deployment: "",
+    azure_openai_api_version: ""
+  },
+  embedder: {
+    embeddings_model: "",
+    embeddings_endpoint: "",
+    embeddings_api_key: "",
+    embeddings_api_version: ""
+  },
+  langfuse: {
+    langfuse_enabled: false,
+    langfuse_public_key: "",
+    langfuse_secret_key: "",
+    langfuse_host: "",
+    langfuse_release: "",
+    langfuse_debug: false,
+    langfuse_prompt_enabled: false,
+    langfuse_prompt_label: "",
+    langfuse_verify_ssl: true,
+    langfuse_ca_bundle: ""
+  }
+};
+
+const configSteps = [
+  { key: "llm", label: "LLM Configuration" },
+  { key: "embedder", label: "Embedder Setup" },
+  { key: "langfuse", label: "Langfuse Observability" }
+];
+
+async function apiRequest(path, options = {}) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: { "Content-Type": "application/json" },
+    ...options
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || "Request failed");
+  }
+  return response.json();
+}
+
+function LoginScreen({ onLogin }) {
+  const [username, setUsername] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!username.trim()) return;
+    setLoading(true);
+    setError("");
+    try {
+      const data = await apiRequest("/api/login", {
+        method: "POST",
+        body: JSON.stringify({ username })
+      });
+      onLogin(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-screen">
+      <div className="login-card">
+        <h1>RCA Command Center</h1>
+        <p>Sign in to configure your RCA agents and explore root cause insights.</p>
+        <form onSubmit={submit}>
+          <div className="input-group">
+            <label htmlFor="username">User name</label>
+            <input
+              id="username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              placeholder="Analyst name"
+            />
+          </div>
+          {error ? <p style={{ color: "#f87171" }}>{error}</p> : null}
+          <button className="btn btn-primary" type="submit" disabled={loading}>
+            {loading ? "Signing in..." : "Start analysis"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function ConfigWizard({ config, setConfig, user, onComplete }) {
+  const [activeStep, setActiveStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [savedSteps, setSavedSteps] = useState({});
+
+  const currentKey = configSteps[activeStep].key;
+
+  const updateField = (section, field, value) => {
+    setConfig((prev) => ({
+      ...prev,
+      [section]: { ...prev[section], [field]: value }
+    }));
+  };
+
+  const saveCurrent = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      await apiRequest(`/api/config/${currentKey === "llm" ? "llm" : currentKey === "embedder" ? "embedder" : "langfuse"}` , {
+        method: "POST",
+        body: JSON.stringify({ user_id: user.user_id, ...config[currentKey] })
+      });
+      setSavedSteps((prev) => ({ ...prev, [currentKey]: true }));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="card">
+      <h2>{configSteps[activeStep].label}</h2>
+      <div className="stepper">
+        {configSteps.map((step, index) => (
+          <span
+            key={step.key}
+            className={`step ${index === activeStep ? "active" : ""}`}
+          >
+            {step.label}
+          </span>
+        ))}
+      </div>
+      {currentKey === "llm" && (
+        <div>
+          <div className="input-group">
+            <label>Azure OpenAI Endpoint</label>
+            <input
+              value={config.llm.azure_openai_endpoint}
+              onChange={(event) => updateField("llm", "azure_openai_endpoint", event.target.value)}
+              placeholder="https://..."
+            />
+          </div>
+          <div className="input-group">
+            <label>Azure OpenAI API Key</label>
+            <input
+              value={config.llm.azure_openai_api_key}
+              onChange={(event) => updateField("llm", "azure_openai_api_key", event.target.value)}
+              placeholder="API key"
+            />
+          </div>
+          <div className="input-group">
+            <label>Deployment Name</label>
+            <input
+              value={config.llm.azure_openai_deployment}
+              onChange={(event) => updateField("llm", "azure_openai_deployment", event.target.value)}
+              placeholder="deployment"
+            />
+          </div>
+          <div className="input-group">
+            <label>API Version</label>
+            <input
+              value={config.llm.azure_openai_api_version}
+              onChange={(event) => updateField("llm", "azure_openai_api_version", event.target.value)}
+            />
+          </div>
+        </div>
+      )}
+      {currentKey === "embedder" && (
+        <div>
+          <div className="input-group">
+            <label>Embeddings Model</label>
+            <input
+              value={config.embedder.embeddings_model}
+              onChange={(event) => updateField("embedder", "embeddings_model", event.target.value)}
+              placeholder="TxtEmbedAda002"
+            />
+          </div>
+          <div className="input-group">
+            <label>Embeddings Endpoint</label>
+            <input
+              value={config.embedder.embeddings_endpoint}
+              onChange={(event) => updateField("embedder", "embeddings_endpoint", event.target.value)}
+            />
+          </div>
+          <div className="input-group">
+            <label>Embeddings API Key</label>
+            <input
+              value={config.embedder.embeddings_api_key}
+              onChange={(event) => updateField("embedder", "embeddings_api_key", event.target.value)}
+            />
+          </div>
+          <div className="input-group">
+            <label>Embeddings API Version</label>
+            <input
+              value={config.embedder.embeddings_api_version}
+              onChange={(event) => updateField("embedder", "embeddings_api_version", event.target.value)}
+            />
+          </div>
+        </div>
+      )}
+      {currentKey === "langfuse" && (
+        <div>
+          <div className="input-group">
+            <label>Langfuse Host</label>
+            <input
+              value={config.langfuse.langfuse_host}
+              onChange={(event) => updateField("langfuse", "langfuse_host", event.target.value)}
+              placeholder="https://cloud.langfuse.com"
+            />
+          </div>
+          <div className="input-group">
+            <label>Langfuse Public Key</label>
+            <input
+              value={config.langfuse.langfuse_public_key}
+              onChange={(event) => updateField("langfuse", "langfuse_public_key", event.target.value)}
+            />
+          </div>
+          <div className="input-group">
+            <label>Langfuse Secret Key</label>
+            <input
+              value={config.langfuse.langfuse_secret_key}
+              onChange={(event) => updateField("langfuse", "langfuse_secret_key", event.target.value)}
+            />
+          </div>
+          <div className="input-group">
+            <label>Release Tag</label>
+            <input
+              value={config.langfuse.langfuse_release}
+              onChange={(event) => updateField("langfuse", "langfuse_release", event.target.value)}
+            />
+          </div>
+          <div className="input-group">
+            <label>Prompt Label</label>
+            <input
+              value={config.langfuse.langfuse_prompt_label}
+              onChange={(event) => updateField("langfuse", "langfuse_prompt_label", event.target.value)}
+            />
+          </div>
+          <div className="input-group">
+            <label>CA Bundle Path</label>
+            <input
+              value={config.langfuse.langfuse_ca_bundle}
+              onChange={(event) => updateField("langfuse", "langfuse_ca_bundle", event.target.value)}
+            />
+          </div>
+          <div className="input-group">
+            <label>Enable Langfuse</label>
+            <select
+              value={config.langfuse.langfuse_enabled ? "yes" : "no"}
+              onChange={(event) => updateField("langfuse", "langfuse_enabled", event.target.value === "yes")}
+            >
+              <option value="yes">Enabled</option>
+              <option value="no">Disabled</option>
+            </select>
+          </div>
+          <div className="input-group">
+            <label>Debug Mode</label>
+            <select
+              value={config.langfuse.langfuse_debug ? "yes" : "no"}
+              onChange={(event) => updateField("langfuse", "langfuse_debug", event.target.value === "yes")}
+            >
+              <option value="yes">Enabled</option>
+              <option value="no">Disabled</option>
+            </select>
+          </div>
+          <div className="input-group">
+            <label>Prompt Tracking</label>
+            <select
+              value={config.langfuse.langfuse_prompt_enabled ? "yes" : "no"}
+              onChange={(event) => updateField("langfuse", "langfuse_prompt_enabled", event.target.value === "yes")}
+            >
+              <option value="yes">Enabled</option>
+              <option value="no">Disabled</option>
+            </select>
+          </div>
+          <div className="input-group">
+            <label>Verify SSL</label>
+            <select
+              value={config.langfuse.langfuse_verify_ssl ? "yes" : "no"}
+              onChange={(event) => updateField("langfuse", "langfuse_verify_ssl", event.target.value === "yes")}
+            >
+              <option value="yes">Enabled</option>
+              <option value="no">Disabled</option>
+            </select>
+          </div>
+        </div>
+      )}
+      {error ? <p style={{ color: "#ef4444", marginTop: "8px" }}>{error}</p> : null}
+      <div style={{ display: "flex", gap: "12px", marginTop: "16px" }}>
+        <button className="btn btn-primary" onClick={saveCurrent} disabled={saving}>
+          {saving ? "Saving..." : "Save configuration"}
+        </button>
+        <button
+          className="btn btn-secondary"
+          onClick={() => setActiveStep(Math.max(activeStep - 1, 0))}
+          disabled={activeStep === 0}
+        >
+          Back
+        </button>
+        <button
+          className="btn btn-outline"
+          onClick={() => setActiveStep(Math.min(activeStep + 1, configSteps.length - 1))}
+          disabled={activeStep === configSteps.length - 1}
+        >
+          Next
+        </button>
+      </div>
+      <div style={{ marginTop: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
+        <span className="badge">Saved: {savedSteps[currentKey] ? "Yes" : "No"}</span>
+        <button className="btn btn-primary" onClick={onComplete}>
+          Continue to assistant
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TracePanel({ trace }) {
+  const entries = useMemo(() => {
+    if (!trace) return [];
+    const list = Array.isArray(trace) ? trace : [trace];
+    return list.flatMap((item) => {
+      if (!item) return [];
+      const calls = item.tool_calls || item.calls || [];
+      return [
+        {
+          agent: item.agent || "Agent",
+          calls: calls
+        }
+      ];
+    });
+  }, [trace]);
+
+  if (!entries.length) {
+    return <p>No trace available yet.</p>;
+  }
+
+  return (
+    <div className="trace-panel">
+      {entries.map((entry, index) => (
+        <div className="trace-item" key={`${entry.agent}-${index}`}>
+          <strong>{entry.agent}</strong>
+          {entry.calls.length ? (
+            <ul style={{ marginTop: "8px", paddingLeft: "16px" }}>
+              {entry.calls.map((call, idx) => (
+                <li key={`${call.name}-${idx}`}>
+                  <div style={{ fontWeight: 600 }}>{call.name || "Tool call"}</div>
+                  {call.args ? (
+                    <pre style={{ whiteSpace: "pre-wrap", marginTop: "4px" }}>{call.args}</pre>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p style={{ marginTop: "8px" }}>No tool calls captured.</p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FeedbackCard({ userId, chatId, onSubmitted }) {
+  const [rating, setRating] = useState(0);
+  const [comments, setComments] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  const submit = async () => {
+    if (!rating || !chatId) return;
+    setSending(true);
+    try {
+      await apiRequest("/api/feedback", {
+        method: "POST",
+        body: JSON.stringify({ user_id: userId, chat_id: chatId, rating, comments })
+      });
+      setSent(true);
+      onSubmitted?.();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="feedback-card">
+      <h4>Feedback loop</h4>
+      <p style={{ marginTop: "4px", color: "#475569" }}>
+        Help the RCA agents learn by rating the response.
+      </p>
+      <div className="feedback-actions">
+        {[1, 2, 3, 4, 5].map((value) => (
+          <button
+            key={value}
+            className={`btn ${rating === value ? "btn-primary" : "btn-secondary"}`}
+            type="button"
+            onClick={() => setRating(value)}
+          >
+            {value}
+          </button>
+        ))}
+      </div>
+      <div className="input-group">
+        <label>Comments</label>
+        <textarea value={comments} onChange={(event) => setComments(event.target.value)} />
+      </div>
+      <button className="btn btn-primary" onClick={submit} disabled={sending || sent}>
+        {sent ? "Feedback captured" : sending ? "Sending..." : "Submit feedback"}
+      </button>
+    </div>
+  );
+}
+
+function ChatScreen({ user }) {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [job, setJob] = useState(null);
+  const [progress, setProgress] = useState(null);
+  const [trace, setTrace] = useState(null);
+  const [activeChatId, setActiveChatId] = useState(null);
+
+  useEffect(() => {
+    apiRequest(`/api/chats/${user.user_id}`)
+      .then((data) => {
+        const history = (data.chats || []).reverse();
+        const restored = history.flatMap((chat) => [
+          { role: "user", content: chat.query, id: `${chat.id}-q` },
+          { role: "assistant", content: chat.response, id: `${chat.id}-a`, trace: chat.trace, chatId: chat.id }
+        ]);
+        setMessages(restored);
+      })
+      .catch(() => undefined);
+  }, [user.user_id]);
+
+  useEffect(() => {
+    if (!job) return;
+    const interval = setInterval(async () => {
+      try {
+        const status = await apiRequest(`/api/chat/status/${job}`);
+        setProgress(status);
+        if (status.status === "completed") {
+          const result = status.result || {};
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              content: result.response,
+              trace: result.trace,
+              chatId: result.chat_id,
+              id: `${result.chat_id}-a`
+            }
+          ]);
+          setTrace(result.trace);
+          setActiveChatId(result.chat_id);
+          setJob(null);
+        }
+        if (status.status === "failed") {
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", content: `Error: ${status.message}`, id: `${status.id}-err` }
+          ]);
+          setJob(null);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }, 1200);
+    return () => clearInterval(interval);
+  }, [job]);
+
+  const send = async () => {
+    if (!input.trim()) return;
+    const query = input;
+    setInput("");
+    setMessages((prev) => [...prev, { role: "user", content: query, id: `user-${Date.now()}` }]);
+    const data = await apiRequest("/api/chat/start", {
+      method: "POST",
+      body: JSON.stringify({ user_id: user.user_id, query })
+    });
+    setJob(data.job_id);
+    setProgress({ status: "queued", progress: 5, message: "Queued" });
+  };
+
+  return (
+    <div className="chat-layout">
+      <div>
+        <div className="card">
+          <h2>RCA Assistant</h2>
+          <p style={{ marginTop: "8px", color: "#475569" }}>
+            Ask a question about inventory, sales, or operational anomalies. The assistant will
+            coordinate agents and return an RCA narrative with supporting reasoning.
+          </p>
+          <div className="chat-window" style={{ marginTop: "24px" }}>
+            {messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`message ${msg.role === "user" ? "user" : "assistant"}`}
+                onClick={() => {
+                  if (msg.trace) {
+                    setTrace(msg.trace);
+                    setActiveChatId(msg.chatId);
+                  }
+                }}
+                role="button"
+              >
+                {msg.content}
+              </div>
+            ))}
+          </div>
+          {progress ? (
+            <div className="progress-card" style={{ marginTop: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>{progress.message}</span>
+                <strong>{progress.progress}%</strong>
+              </div>
+              <div className="progress-bar">
+                <span style={{ width: `${progress.progress}%` }} />
+              </div>
+            </div>
+          ) : null}
+          <div className="chat-input">
+            <textarea
+              placeholder="Describe the issue to analyze..."
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+            />
+            <button className="btn btn-primary" onClick={send} disabled={!!job}>
+              {job ? "Working..." : "Send"}
+            </button>
+          </div>
+          {activeChatId ? (
+            <FeedbackCard
+              userId={user.user_id}
+              chatId={activeChatId}
+              onSubmitted={() => undefined}
+            />
+          ) : null}
+        </div>
+      </div>
+      <div>
+        <div className="card">
+          <h3>Agentic trace</h3>
+          <p style={{ marginTop: "4px", color: "#475569" }}>
+            Click any assistant response to inspect how each agent reasoned through the task.
+          </p>
+          <div style={{ marginTop: "12px" }}>
+            <TracePanel trace={trace} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Sidebar({ user, step }) {
+  return (
+    <aside className="sidebar">
+      <h2>RCA Ops Hub</h2>
+      <section>
+        <div className="status-pill">Session active</div>
+        <p style={{ marginTop: "12px", color: "#94a3b8" }}>{user.username}</p>
+      </section>
+      <section>
+        <h4 style={{ marginBottom: "8px" }}>Workspace</h4>
+        <ul style={{ listStyle: "none", display: "grid", gap: "8px" }}>
+          <li className="badge">Login</li>
+          <li className="badge">Configuration</li>
+          <li className="badge">Chat assistant</li>
+        </ul>
+        <p style={{ marginTop: "12px", color: "#94a3b8" }}>
+          Current stage: <strong>{step}</strong>
+        </p>
+      </section>
+    </aside>
+  );
+}
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [config, setConfig] = useState(emptyConfig);
+  const [step, setStep] = useState("Configuration");
+
+  useEffect(() => {
+    if (!user) return;
+    Promise.all([
+      apiRequest("/api/config/defaults"),
+      apiRequest(`/api/config/${user.user_id}`)
+    ])
+      .then(([defaults, stored]) => {
+        setConfig({
+          llm: { ...defaults.llm, ...stored.llm },
+          embedder: { ...defaults.embedder, ...stored.embedder },
+          langfuse: { ...defaults.langfuse, ...stored.langfuse }
+        });
+      })
+      .catch(() => undefined);
+  }, [user]);
+
+  if (!user) {
+    return <LoginScreen onLogin={(data) => setUser(data)} />;
+  }
+
+  return (
+    <div className="app-shell">
+      <Sidebar user={user} step={step} />
+      <main className="container">
+        {step === "Configuration" ? (
+          <ConfigWizard
+            config={config}
+            setConfig={setConfig}
+            user={user}
+            onComplete={() => setStep("Chat")}
+          />
+        ) : (
+          <ChatScreen user={user} />
+        )}
+      </main>
+    </div>
+  );
+}
