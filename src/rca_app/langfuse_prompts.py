@@ -493,40 +493,72 @@ def fetch_langfuse_prompt(
         return None
 
     url = f"{config.langfuse_host.rstrip('/')}/api/public/prompts/{name}"
-    params = {"label": label} if label else None
     headers = _basic_auth_header(config.langfuse_public_key, config.langfuse_secret_key)
     verify = _langfuse_verify_setting(config)
     _maybe_disable_insecure_request_warnings(config)
 
-    try:
-        response = requests.get(
-            url, headers=headers, params=params, timeout=timeout_s, verify=verify
-        )
-    except requests.RequestException as exc:
-        _log_ssl_help(exc, config, "prompt fetch")
-        logger.warning("Failed to reach Langfuse prompt API for %s: %s", name, exc)
-        return _fetch_prompt_via_client(config, name=name, label=label, timeout_s=timeout_s)
+    labels_to_try: list[str | None] = []
+    if label:
+        labels_to_try.append(label)
+        if label != "latest":
+            labels_to_try.append("latest")
+    else:
+        labels_to_try.append(None)
 
-    if response.status_code == 404:
-        logger.info("Langfuse prompt %s not found", name)
-        return _fetch_prompt_via_client(config, name=name, label=label, timeout_s=timeout_s)
-    if response.status_code >= 400:
-        logger.warning(
-            "Langfuse prompt fetch failed name=%s status=%s body=%s",
-            name,
-            response.status_code,
-            response.text,
-        )
-        return None
+    for candidate_label in labels_to_try:
+        params = {"label": candidate_label} if candidate_label else None
 
-    payload = response.json()
-    prompt_text = _extract_prompt_text(payload)
-    if not prompt_text:
-        logger.warning("Langfuse prompt payload missing prompt text for %s", name)
-        return None
+        try:
+            response = requests.get(
+                url, headers=headers, params=params, timeout=timeout_s, verify=verify
+            )
+        except requests.RequestException as exc:
+            _log_ssl_help(exc, config, "prompt fetch")
+            logger.warning("Failed to reach Langfuse prompt API for %s: %s", name, exc)
+            response_obj = _fetch_prompt_via_client(
+                config, name=name, label=candidate_label, timeout_s=timeout_s
+            )
+            if response_obj:
+                return response_obj
+            continue
 
-    resolved_label = payload.get("label") if isinstance(payload, Mapping) else None
-    return LangfusePromptResponse(name=name, prompt=prompt_text, label=resolved_label)
+        if response.status_code == 404:
+            logger.info("Langfuse prompt %s not found (label=%s)", name, candidate_label)
+            response_obj = _fetch_prompt_via_client(
+                config, name=name, label=candidate_label, timeout_s=timeout_s
+            )
+            if response_obj:
+                return response_obj
+            continue
+        if response.status_code >= 400:
+            logger.warning(
+                "Langfuse prompt fetch failed name=%s status=%s body=%s",
+                name,
+                response.status_code,
+                response.text,
+            )
+            continue
+
+        payload = response.json()
+        prompt_text = _extract_prompt_text(payload)
+        if not prompt_text:
+            logger.warning(
+                "Langfuse prompt payload missing prompt text for %s (label=%s)",
+                name,
+                candidate_label,
+            )
+            continue
+
+        resolved_label = payload.get("label") if isinstance(payload, Mapping) else None
+        if label and candidate_label == "latest" and resolved_label != label:
+            logger.info(
+                "Langfuse prompt %s missing label=%s; falling back to latest.",
+                name,
+                label,
+            )
+        return LangfusePromptResponse(name=name, prompt=prompt_text, label=resolved_label)
+
+    return None
 
 
 def render_prompt(
