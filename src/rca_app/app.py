@@ -16,6 +16,27 @@ from .types import RCAState
 logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
 
+
+def _hydrate_history_from_checkpoint(
+    rca_state: RCAState,
+    checkpointer: Any,
+    config: Dict[str, Any] | None,
+) -> None:
+    if rca_state.get("history"):
+        return
+    if not config:
+        return
+    configurable = config.get("configurable", {})
+    if "thread_id" not in configurable:
+        return
+    checkpoint_tuple = checkpointer.get_tuple({"configurable": dict(configurable)})
+    if not checkpoint_tuple:
+        return
+    history = checkpoint_tuple.checkpoint.get("channel_values", {}).get("history")
+    if history:
+        rca_state["history"] = history
+        logger.debug("Hydrated history from checkpointer entries=%s", len(history))
+
 @dataclass
 class RCAApp:
     config: AppConfig
@@ -40,6 +61,7 @@ def build_app(config: AppConfig) -> RCAApp:
     def run_orchestration(rca_state, runtime_config=None):
         if runtime_config is None:
             runtime_config = runnable_config.ensure_config()
+        _hydrate_history_from_checkpoint(rca_state, checkpointer, runtime_config)
         return orchestration_agent(
             rca_state,
             runtime_config,
@@ -79,13 +101,11 @@ def run_rca(app: RCAApp, task: str, user_id: str, query_id: str) -> Dict[str, An
         "output": "",
         "trace": [],
     }
-    checkpoint_tuple = app.checkpointer.get_tuple(
-        {"configurable": {"thread_id": query_id, "user_id": user_id}}
+    _hydrate_history_from_checkpoint(
+        rca_state,
+        app.checkpointer,
+        {"configurable": {"thread_id": query_id, "user_id": user_id}},
     )
-    if checkpoint_tuple:
-        history = checkpoint_tuple.checkpoint.get("channel_values", {}).get("history")
-        if history:
-            rca_state["history"] = history
     logger.info("Running RCA for user_id=%s query_id=%s", user_id, query_id)
     logger.debug("RCA task length=%s", len(task))
     return app.app.invoke(rca_state, {**config, **observability_config})
