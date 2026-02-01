@@ -6,6 +6,8 @@ import warnings
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping
 
+import importlib
+
 import requests
 from urllib3.exceptions import InsecureRequestWarning
 
@@ -413,6 +415,74 @@ def _extract_prompt_text(payload: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _fetch_prompt_via_client(
+    config: AppConfig,
+    name: str,
+    label: str | None,
+    timeout_s: float,
+) -> LangfusePromptResponse | None:
+    if not importlib.util.find_spec("langfuse"):
+        return None
+
+    httpx_client = None
+    verify_setting = _langfuse_verify_setting(config)
+    if verify_setting is not True:
+        try:
+            import httpx
+        except ModuleNotFoundError:
+            logger.warning(
+                "Langfuse prompt fetch via client needs httpx to override SSL verification."
+            )
+        else:
+            httpx_client = httpx.Client(verify=verify_setting, timeout=timeout_s)
+
+    from langfuse import Langfuse
+
+    try:
+        langfuse = Langfuse(
+            public_key=config.langfuse_public_key,
+            secret_key=config.langfuse_secret_key,
+            host=config.langfuse_host,
+            httpx_client=httpx_client,
+        )
+        prompt_obj = langfuse.get_prompt(name, label=label)
+    except Exception as exc:
+        logger.warning("Langfuse client prompt fetch failed for %s: %s", name, exc)
+        return None
+    finally:
+        if httpx_client is not None:
+            httpx_client.close()
+
+    payload: Mapping[str, Any] | None = None
+    if isinstance(prompt_obj, Mapping):
+        payload = prompt_obj
+    elif hasattr(prompt_obj, "model_dump"):
+        payload = prompt_obj.model_dump()
+    elif hasattr(prompt_obj, "dict"):
+        payload = prompt_obj.dict()
+    elif hasattr(prompt_obj, "to_dict"):
+        payload = prompt_obj.to_dict()
+
+    if payload:
+        prompt_text = _extract_prompt_text(payload)
+        if prompt_text:
+            resolved_label = payload.get("label") if isinstance(payload, Mapping) else None
+            return LangfusePromptResponse(name=name, prompt=prompt_text, label=resolved_label)
+
+    prompt_value = getattr(prompt_obj, "prompt", None)
+    if isinstance(prompt_value, str):
+        return LangfusePromptResponse(name=name, prompt=prompt_value, label=label)
+    if isinstance(prompt_value, list):
+        for entry in prompt_value:
+            if isinstance(entry, Mapping):
+                content = entry.get("content")
+                if isinstance(content, str):
+                    return LangfusePromptResponse(name=name, prompt=content, label=label)
+
+    logger.warning("Langfuse client prompt payload missing prompt text for %s", name)
+    return None
+
+
 def fetch_langfuse_prompt(
     config: AppConfig,
     name: str,
@@ -435,11 +505,11 @@ def fetch_langfuse_prompt(
     except requests.RequestException as exc:
         _log_ssl_help(exc, config, "prompt fetch")
         logger.warning("Failed to reach Langfuse prompt API for %s: %s", name, exc)
-        return None
+        return _fetch_prompt_via_client(config, name=name, label=label, timeout_s=timeout_s)
 
     if response.status_code == 404:
         logger.info("Langfuse prompt %s not found", name)
-        return None
+        return _fetch_prompt_via_client(config, name=name, label=label, timeout_s=timeout_s)
     if response.status_code >= 400:
         logger.warning(
             "Langfuse prompt fetch failed name=%s status=%s body=%s",
