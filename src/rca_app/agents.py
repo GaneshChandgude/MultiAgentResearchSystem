@@ -386,10 +386,10 @@ def build_validation_tool(config: AppConfig, store, checkpointer, llm):
     @tool
     def hypothesis_validation_agent_tool(
         hypotheses: List[str],
-        sales_insights: Optional[Dict[str, Any]] = None,
-        inventory_insights: Optional[Dict[str, Any]] = None,
         user_id: str,
         query_id: str,
+        sales_insights: Optional[Dict[str, Any]] = None,
+        inventory_insights: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Purpose:
@@ -403,14 +403,14 @@ def build_validation_tool(config: AppConfig, store, checkpointer, llm):
         Inputs:
             - hypotheses (List[str]):
                 Hypotheses to be validated.
-            - sales_insights (dict):
-                Output from the Sales Analysis tool.
-            - inventory_insights (dict):
-                Output from the Inventory Analysis tool.
             - user_id (str):
                 User/session identifier for scoped memory access.
             - query_id (str):
                 Query/thread identifier.
+            - sales_insights (dict):
+                Output from the Sales Analysis tool.
+            - inventory_insights (dict):
+                Output from the Inventory Analysis tool.
 
         Output:
             - dict:
