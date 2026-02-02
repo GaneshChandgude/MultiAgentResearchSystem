@@ -68,13 +68,32 @@ def process_response(response_content: str, llm=None, app_config: AppConfig | No
     raise ValueError(f"Model response could not be parsed: {last_exception}")
 
 
+def _build_tool_error_message(error: Exception, tool_name: str | None) -> str:
+    error_text = str(error)
+    missing_fields = re.findall(r"([A-Za-z0-9_]+)\s+Field required", error_text)
+    if missing_fields:
+        fields_list = ", ".join(sorted(set(missing_fields)))
+        guidance = (
+            f"Missing required fields: {fields_list}. "
+            "Please call the tool again with all required inputs. "
+        )
+        if tool_name == "hypothesis_validation_agent_tool":
+            guidance += (
+                "Include sales_insights and inventory_insights from prior analysis outputs."
+            )
+        return f"Tool error: {guidance} ({error_text})"
+
+    return f"Tool error: Please check your input and try again. ({error_text})"
+
+
 @wrap_tool_call
 def handle_tool_errors(request, handler):
     try:
         return handler(request)
     except Exception as e:
+        tool_name = request.tool_call.get("name") if request.tool_call else None
         return ToolMessage(
-            content=f"Tool error: Please check your input and try again. ({str(e)})",
+            content=_build_tool_error_message(e, tool_name),
             tool_call_id=request.tool_call["id"],
         )
 
