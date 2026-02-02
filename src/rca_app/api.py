@@ -5,6 +5,9 @@ import logging
 from dataclasses import asdict, replace
 from typing import Any, Dict, Optional
 
+import httpx
+from langfuse import Langfuse, observe
+from langfuse.langchain import CallbackHandler
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -25,6 +28,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_base_config = load_config()
+client = httpx.Client(verify=False)
+langfuse = Langfuse(
+    public_key=_base_config.langfuse_public_key,
+    secret_key=_base_config.langfuse_secret_key,
+    host="https://cloud.langfuse.com",
+    httpx_client=client,
+)
+langfuse_handler = CallbackHandler()
 
 store = UIStore(resolve_data_dir() / "rca_ui.db")
 _app_cache: Dict[str, Any] = {}
@@ -201,17 +214,20 @@ def _run_job(job_id: str, user_id: str, query: str) -> None:
 
 
 @app.get("/api/health")
+@observe()
 async def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
 @app.post("/api/login", response_model=LoginResponse)
+@observe()
 async def login(payload: LoginRequest) -> LoginResponse:
     user_id = store.create_user(payload.username)
     return LoginResponse(user_id=user_id, username=payload.username)
 
 
 @app.post("/api/logout")
+@observe()
 async def logout(payload: LogoutRequest, background_tasks: BackgroundTasks) -> Dict[str, str]:
     logger.info("Logout requested for user_id=%s", payload.user_id)
     if payload.user_id in _session_cache:
@@ -228,6 +244,7 @@ async def logout(payload: LogoutRequest, background_tasks: BackgroundTasks) -> D
 
 
 @app.get("/api/config/defaults", response_model=ConfigResponse)
+@observe()
 async def config_defaults() -> ConfigResponse:
     base = load_config()
     return ConfigResponse(
@@ -259,6 +276,7 @@ async def config_defaults() -> ConfigResponse:
 
 
 @app.get("/api/config/{user_id}", response_model=ConfigResponse)
+@observe()
 async def get_config(user_id: str) -> ConfigResponse:
     configs = store.get_config(user_id)
     llm = configs.get("llm", {})
@@ -268,24 +286,28 @@ async def get_config(user_id: str) -> ConfigResponse:
 
 
 @app.post("/api/config/llm")
+@observe()
 async def set_llm_config(payload: LLMConfigRequest) -> Dict[str, str]:
     store.upsert_config(payload.user_id, "llm", payload.model_dump(exclude={"user_id"}))
     return {"status": "saved"}
 
 
 @app.post("/api/config/embedder")
+@observe()
 async def set_embedder_config(payload: EmbedderConfigRequest) -> Dict[str, str]:
     store.upsert_config(payload.user_id, "embedder", payload.model_dump(exclude={"user_id"}))
     return {"status": "saved"}
 
 
 @app.post("/api/config/langfuse")
+@observe()
 async def set_langfuse_config(payload: LangfuseConfigRequest) -> Dict[str, str]:
     store.upsert_config(payload.user_id, "langfuse", payload.model_dump(exclude={"user_id"}))
     return {"status": "saved"}
 
 
 @app.post("/api/chat/start")
+@observe()
 async def start_chat(payload: ChatStartRequest, background_tasks: BackgroundTasks) -> Dict[str, str]:
     if not payload.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
@@ -295,6 +317,7 @@ async def start_chat(payload: ChatStartRequest, background_tasks: BackgroundTask
 
 
 @app.get("/api/chat/status/{job_id}")
+@observe()
 async def chat_status(job_id: str) -> Dict[str, Any]:
     try:
         return store.get_job(job_id)
@@ -303,11 +326,13 @@ async def chat_status(job_id: str) -> Dict[str, Any]:
 
 
 @app.get("/api/chats/{user_id}")
+@observe()
 async def list_chats(user_id: str) -> Dict[str, Any]:
     return {"chats": store.list_chats(user_id)}
 
 
 @app.post("/api/feedback")
+@observe()
 async def submit_feedback(payload: FeedbackRequest) -> Dict[str, str]:
     feedback_id = store.save_feedback(payload.chat_id, payload.user_id, payload.rating, payload.comments)
     return {"status": "received", "feedback_id": feedback_id}
