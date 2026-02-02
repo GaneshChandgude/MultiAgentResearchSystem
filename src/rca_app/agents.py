@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import TodoListMiddleware
@@ -386,8 +386,8 @@ def build_validation_tool(config: AppConfig, store, checkpointer, llm):
     @tool
     def hypothesis_validation_agent_tool(
         hypotheses: List[str],
-        sales_insights: Dict[str, Any],
-        inventory_insights: Dict[str, Any],
+        sales_insights: Optional[Dict[str, Any]] = None,
+        inventory_insights: Optional[Dict[str, Any]] = None,
         user_id: str,
         query_id: str,
     ) -> Dict[str, Any]:
@@ -424,6 +424,12 @@ def build_validation_tool(config: AppConfig, store, checkpointer, llm):
             query_id,
             len(hypotheses),
         )
+        if sales_insights is None:
+            logger.warning("Validation tool invoked without sales_insights; defaulting to empty dict.")
+            sales_insights = {}
+        if inventory_insights is None:
+            logger.warning("Validation tool invoked without inventory_insights; defaulting to empty dict.")
+            inventory_insights = {}
         system_prompt = render_prompt(
             config,
             name="rca.validation.system",
