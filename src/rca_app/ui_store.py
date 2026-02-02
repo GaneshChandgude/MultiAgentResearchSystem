@@ -75,7 +75,42 @@ class UIStore:
         return datetime.utcnow().isoformat()
 
     def create_user(self, username: str) -> str:
-        user_id = str(uuid4())
+        username = username.strip()
+        if not username:
+            user_id = str(uuid4())
+            logger.info("Generated anonymous user %s", user_id)
+            return user_id
+        existing = self._conn.execute(
+            "SELECT id FROM users WHERE username = ?",
+            (username,),
+        ).fetchone()
+        if existing:
+            existing_id = existing[0]
+            if existing_id != username:
+                with self._conn:
+                    self._conn.execute(
+                        "UPDATE users SET id = ? WHERE username = ?",
+                        (username, username),
+                    )
+                    self._conn.execute(
+                        "UPDATE configs SET user_id = ? WHERE user_id = ?",
+                        (username, existing_id),
+                    )
+                    self._conn.execute(
+                        "UPDATE chats SET user_id = ? WHERE user_id = ?",
+                        (username, existing_id),
+                    )
+                    self._conn.execute(
+                        "UPDATE feedback SET user_id = ? WHERE user_id = ?",
+                        (username, existing_id),
+                    )
+                    self._conn.execute(
+                        "UPDATE jobs SET user_id = ? WHERE user_id = ?",
+                        (username, existing_id),
+                    )
+                logger.info("Migrated user %s to username-based id=%s", existing_id, username)
+            return username
+        user_id = username
         with self._conn:
             self._conn.execute(
                 "INSERT INTO users (id, username, created_at) VALUES (?, ?, ?)",
