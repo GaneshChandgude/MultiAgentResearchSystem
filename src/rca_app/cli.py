@@ -89,7 +89,7 @@ def run_chat():
             print("\nExiting RCA chatbot.")
             break
 
-        config_dict = {"configurable": {"user_id": user_id, "thread_id": query_id}}
+        config_dict = {"configurable": {"user_id": user_id, "thread_id": user_id}}
         observability_config = build_langfuse_invoke_config(
             app.config,
             user_id=user_id,

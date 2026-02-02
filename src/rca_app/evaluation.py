@@ -257,7 +257,7 @@ def log_eval_scores(
 
 def run_rca_with_memory(app: RCAApp, case: GoldRCACase) -> Dict[str, Any]:
     query_id = f"eval_{case.case_id}_with_memory"
-    config = {"configurable": {"user_id": "eval_user", "thread_id": query_id, "memory_enabled": True}}
+    config = {"configurable": {"user_id": "eval_user", "thread_id": "eval_user", "memory_enabled": True}}
     rca_state = {"task": case.task, "output": "", "trace": []}
     observability_config = build_langfuse_invoke_config(
         app.config,
@@ -280,7 +280,7 @@ def run_rca_with_memory(app: RCAApp, case: GoldRCACase) -> Dict[str, Any]:
 def run_rca_without_memory(app: RCAApp, case: GoldRCACase) -> Dict[str, Any]:
     query_id = f"eval_{case.case_id}_without_memory"
     config = {
-        "configurable": {"user_id": "eval_user_nomem", "thread_id": query_id, "memory_enabled": False}
+        "configurable": {"user_id": "eval_user_nomem", "thread_id": "eval_user_nomem", "memory_enabled": False}
     }
     empty_state = {"task": case.task, "output": "", "trace": []}
     observability_config = build_langfuse_invoke_config(
@@ -331,7 +331,7 @@ def learning_curve(app: RCAApp, cases: List[GoldRCACase]) -> List[float]:
     recalls = []
     for c in cases:
         query_id = f"eval_{c.case_id}_learning_curve"
-        config = {"configurable": {"user_id": "eval_user", "thread_id": query_id}}
+        config = {"configurable": {"user_id": "eval_user", "thread_id": "eval_user"}}
         observability_config = build_langfuse_invoke_config(
             app.config,
             user_id="eval_user",

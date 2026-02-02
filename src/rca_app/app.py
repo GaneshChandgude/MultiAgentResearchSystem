@@ -27,8 +27,10 @@ def _hydrate_history_from_checkpoint(
     if not config:
         return
     configurable = config.get("configurable", {})
-    if "thread_id" not in configurable:
+    if "thread_id" not in configurable and "user_id" not in configurable:
         return
+    if "thread_id" not in configurable and "user_id" in configurable:
+        configurable = {**configurable, "thread_id": configurable["user_id"]}
     checkpoint_tuple = checkpointer.get_tuple({"configurable": dict(configurable)})
     if not checkpoint_tuple:
         return
@@ -92,9 +94,8 @@ def run_rca(
     task: str,
     user_id: str,
     query_id: str,
-    thread_id: str | None = None,
 ) -> Dict[str, Any]:
-    resolved_thread_id = thread_id or query_id
+    resolved_thread_id = user_id
     config = {
         "configurable": {
             "user_id": user_id,

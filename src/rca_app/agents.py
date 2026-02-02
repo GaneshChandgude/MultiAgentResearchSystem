@@ -87,7 +87,7 @@ def build_hypothesis_tool(config: AppConfig, store, checkpointer, llm):
             metadata={"agent": "HypothesisAgent", "task_length": len(task)},
         )
         tool_config = {
-            "configurable": {"user_id": user_id, "thread_id": query_id},
+            "configurable": {"user_id": user_id, "thread_id": user_id},
             **observability_config,
         }
 
@@ -219,7 +219,7 @@ Hypotheses: {sales_related_hypotheses}
             },
         )
         tool_config = {
-            "configurable": {"user_id": user_id, "thread_id": query_id},
+            "configurable": {"user_id": user_id, "thread_id": user_id},
             **observability_config,
         }
         result = sales_react_agent.invoke({"messages": messages}, tool_config)
@@ -347,7 +347,7 @@ Hypotheses to validate: {inventory_related_hypotheses}
             },
         )
         tool_config = {
-            "configurable": {"user_id": user_id, "thread_id": query_id},
+            "configurable": {"user_id": user_id, "thread_id": user_id},
             **observability_config,
         }
         result = inventory_react_agent.invoke({"messages": messages}, tool_config)
@@ -459,7 +459,7 @@ Inventory insights:
             },
         )
         tool_config = {
-            "configurable": {"user_id": user_id, "thread_id": query_id},
+            "configurable": {"user_id": user_id, "thread_id": user_id},
             **observability_config,
         }
         result = validation_react_agent.invoke({"messages": messages}, tool_config)
@@ -567,7 +567,7 @@ Prior trace:
             },
         )
         tool_config = {
-            "configurable": {"user_id": user_id, "thread_id": query_id},
+            "configurable": {"user_id": user_id, "thread_id": user_id},
             **observability_config,
         }
         result = root_cause_react_agent.invoke({"messages": messages}, tool_config)
@@ -656,7 +656,7 @@ Use the following structured RCA output:
             metadata={"agent": "ReportAgent", "task_length": len(f"{root_cause}{reasoning}")},
         )
         tool_config = {
-            "configurable": {"user_id": user_id, "thread_id": query_id},
+            "configurable": {"user_id": user_id, "thread_id": user_id},
             **observability_config,
         }
         report_text = rca_report_agent.invoke(report_messages, tool_config).content

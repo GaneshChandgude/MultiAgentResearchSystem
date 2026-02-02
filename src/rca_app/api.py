@@ -177,13 +177,11 @@ def _run_job(job_id: str, user_id: str, query: str) -> None:
         store.update_job(job_id, status="running", progress=35, message="Initializing RCA agents")
         rca_app = _get_rca_app(config)
         store.update_job(job_id, status="running", progress=60, message="Running root cause analysis")
-        thread_id = _session_cache.get(user_id, {}).get("thread_id", user_id)
         result = run_rca(
             rca_app,
             query,
             user_id=user_id,
             query_id=job_id,
-            thread_id=thread_id,
         )
         store.update_job(job_id, status="running", progress=85, message="Assembling response")
 
@@ -192,12 +190,11 @@ def _run_job(job_id: str, user_id: str, query: str) -> None:
             "config": {
                 "configurable": {
                     "user_id": user_id,
-                    "thread_id": thread_id,
+                    "thread_id": user_id,
                     "query_id": job_id,
                 }
             },
             "last_query": query,
-            "thread_id": thread_id,
         }
 
         if user_id in _pending_persistence:
