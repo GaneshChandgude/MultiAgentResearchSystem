@@ -633,7 +633,7 @@ function ChatScreen({ user }) {
                 </div>
                 <div className="message-stack">
                   <div className={`message ${msg.role === "user" ? "user" : "assistant"}`}>
-                    {msg.content}
+                    <div className="message-content">{msg.content}</div>
                   </div>
                   {msg.role === "assistant" ? (
                     <ResponseActions userId={user.user_id} message={msg} />
