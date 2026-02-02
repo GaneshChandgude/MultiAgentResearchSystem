@@ -87,8 +87,21 @@ def build_app(config: AppConfig) -> RCAApp:
     )
 
 
-def run_rca(app: RCAApp, task: str, user_id: str, query_id: str) -> Dict[str, Any]:
-    config = {"configurable": {"user_id": user_id, "thread_id": query_id}}
+def run_rca(
+    app: RCAApp,
+    task: str,
+    user_id: str,
+    query_id: str,
+    thread_id: str | None = None,
+) -> Dict[str, Any]:
+    resolved_thread_id = thread_id or query_id
+    config = {
+        "configurable": {
+            "user_id": user_id,
+            "thread_id": resolved_thread_id,
+            "query_id": query_id,
+        }
+    }
     observability_config = build_langfuse_invoke_config(
         app.config,
         user_id=user_id,
@@ -104,8 +117,13 @@ def run_rca(app: RCAApp, task: str, user_id: str, query_id: str) -> Dict[str, An
     _hydrate_history_from_checkpoint(
         rca_state,
         app.checkpointer,
-        {"configurable": {"thread_id": query_id, "user_id": user_id}},
+        {"configurable": {"thread_id": resolved_thread_id, "user_id": user_id}},
     )
-    logger.info("Running RCA for user_id=%s query_id=%s", user_id, query_id)
+    logger.info(
+        "Running RCA for user_id=%s query_id=%s thread_id=%s",
+        user_id,
+        query_id,
+        resolved_thread_id,
+    )
     logger.debug("RCA task length=%s", len(task))
     return app.app.invoke(rca_state, {**config, **observability_config})
