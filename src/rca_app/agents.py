@@ -691,6 +691,9 @@ def orchestration_agent(
     router_agent,
     app_config: AppConfig,
 ):
+    configurable = config.get("configurable", {})
+    query_id = configurable.get("query_id", configurable.get("thread_id"))
+    user_id = configurable.get("user_id")
     if not rca_state.get("history"):
         rca_state["history"] = []
         logger.debug("Initialized empty history in RCA state")
@@ -709,8 +712,8 @@ def orchestration_agent(
         fallback=PROMPT_DEFINITIONS["rca.orchestration.system"],
         variables={
             "task": rca_state["task"],
-            "user_id": config["configurable"]["user_id"],
-            "query_id": config["configurable"]["thread_id"],
+            "user_id": user_id,
+            "query_id": query_id,
             "memory_context": memory_context,
         },
     )
@@ -721,8 +724,8 @@ def orchestration_agent(
 
     observability_config = build_langfuse_invoke_config(
         app_config,
-        user_id=config["configurable"]["user_id"],
-        query_id=config["configurable"]["thread_id"],
+        user_id=user_id,
+        query_id=query_id,
         tags=["OrchestrationAgent"],
         metadata={
             "agent": "OrchestrationAgent",
@@ -738,8 +741,8 @@ def orchestration_agent(
 
     logger.debug(
         "Invoking router agent user_id=%s query_id=%s",
-        config["configurable"]["user_id"],
-        config["configurable"]["thread_id"],
+        user_id,
+        query_id,
     )
     result = router_agent.invoke({"messages": messages}, tool_config)
     final_msg = result["messages"][-1].content

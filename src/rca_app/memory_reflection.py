@@ -53,12 +53,14 @@ def add_episodic_memory(rca_state, config, store, llm, app_config: AppConfig) ->
         logger.debug("Skipping episodic memory; no history found")
         return
 
+    configurable = config.get("configurable", {})
+    query_id = configurable.get("query_id", configurable.get("thread_id"))
     conversation = format_conversation(history)
     reflect = build_reflection_chain(llm, app_config)
     observability_config = build_langfuse_invoke_config(
         app_config,
-        user_id=config["configurable"]["user_id"],
-        query_id=config["configurable"]["thread_id"],
+        user_id=configurable.get("user_id"),
+        query_id=query_id,
         tags=["MemoryReflection", "Episodic"],
         metadata={"entrypoint": "add_episodic_memory", "history_length": len(history)},
     )
@@ -79,12 +81,14 @@ def add_procedural_memory(rca_state, config, store, llm, app_config: AppConfig) 
         logger.debug("Skipping procedural memory; no history found")
         return
 
+    configurable = config.get("configurable", {})
+    query_id = configurable.get("query_id", configurable.get("thread_id"))
     conversation = format_conversation(history)
     procedural_reflection = build_procedural_chain(llm, app_config)
     observability_config = build_langfuse_invoke_config(
         app_config,
-        user_id=config["configurable"]["user_id"],
-        query_id=config["configurable"]["thread_id"],
+        user_id=configurable.get("user_id"),
+        query_id=query_id,
         tags=["MemoryReflection", "Procedural"],
         metadata={"entrypoint": "add_procedural_memory", "history_length": len(history)},
     )
