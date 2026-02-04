@@ -198,6 +198,26 @@ python -m rca_app chat
 rca-app inspect-memory
 ```
 
+### Run evals (with Langfuse scores)
+
+Run the built-in eval cases and log scores to Langfuse (if enabled):
+
+```bash
+rca-app eval
+```
+
+Run a single eval case:
+
+```bash
+rca-app eval --case-id PROMO_STOCKOUT_01
+```
+
+Run only the learning-curve evaluation:
+
+```bash
+rca-app eval --learning-curve
+```
+
 ### Run MCP toolset servers (SSE)
 
 Start the local MCP servers that expose Salesforce and SAP toolsets over SSE:

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .app import build_app
 from .config import load_config, resolve_data_dir
+from .evaluation import GOLD_RCA_DATASET, learning_curve, run_memory_ablation
 from .langfuse_prompts import sync_prompt_definitions
 from .memory import mark_memory_useful, semantic_recall
 from .memory_reflection import add_episodic_memory, add_procedural_memory, build_semantic_memory
@@ -148,6 +149,50 @@ def inspect_memory():
     print("--------------------------------------------------------------------------")
 
 
+def run_evals(case_id: str | None, learning_curve_only: bool) -> int:
+    config = load_config()
+    app = build_app(config)
+    cases = GOLD_RCA_DATASET
+    if case_id:
+        cases = [case for case in cases if case.case_id == case_id]
+        if not cases:
+            print(f"No eval case found for case_id={case_id}.")
+            return 1
+
+    if learning_curve_only:
+        recalls = learning_curve(app, cases)
+        print("Learning curve recalls:")
+        for case, recall in zip(cases, recalls, strict=False):
+            print(f"- {case.case_id}: {recall:.3f}")
+        return 0
+
+    print("Running memory ablation evals:")
+    for case in cases:
+        scores = run_memory_ablation(app, case)
+        with_mem = scores["with_memory"]
+        without_mem = scores["without_memory"]
+        print(f"- {case.case_id}:")
+        print(
+            "  with_memory: "
+            f"precision={with_mem.precision:.3f}, "
+            f"recall={with_mem.recall:.3f}, "
+            f"hypothesis_coverage={with_mem.hypothesis_coverage:.3f}, "
+            f"evidence_score={with_mem.evidence_score:.3f}, "
+            f"process_compliance={with_mem.process_compliance}, "
+            f"forbidden_penalty={with_mem.forbidden_penalty}"
+        )
+        print(
+            "  without_memory: "
+            f"precision={without_mem.precision:.3f}, "
+            f"recall={without_mem.recall:.3f}, "
+            f"hypothesis_coverage={without_mem.hypothesis_coverage:.3f}, "
+            f"evidence_score={without_mem.evidence_score:.3f}, "
+            f"process_compliance={without_mem.process_compliance}, "
+            f"forbidden_penalty={without_mem.forbidden_penalty}"
+        )
+    return 0
+
+
 def main(argv: list[str] | None = None):
     configure_logging()
     parser = argparse.ArgumentParser(description="RCA project CLI")
@@ -169,6 +214,13 @@ def main(argv: list[str] | None = None):
         "sync-langfuse-prompts", help="Create Langfuse prompts if missing"
     )
     prompt_parser.add_argument("--label", default=None)
+    eval_parser = subparsers.add_parser("eval", help="Run RCA evals")
+    eval_parser.add_argument("--case-id", default=None, help="Run a single eval case ID")
+    eval_parser.add_argument(
+        "--learning-curve",
+        action="store_true",
+        help="Run learning curve evaluation only",
+    )
 
     args = parser.parse_args(argv)
 
@@ -205,6 +257,8 @@ def main(argv: list[str] | None = None):
         synced = sync_prompt_definitions(config, label=args.label or config.langfuse_prompt_label)
         print(f"Synced {synced} Langfuse prompts.")
         return 0
+    if args.command == "eval":
+        return run_evals(args.case_id, args.learning_curve)
 
     parser.print_help()
     return 1
