@@ -100,6 +100,13 @@ def handle_tool_errors(request, handler):
 
 def serialize_messages(msgs: List[Any]) -> List[Dict[str, Any]]:
     cleaned = []
+    tool_call_status: Dict[str, str] = {}
+
+    for m in msgs:
+        if hasattr(m, "tool_call_id"):
+            content = str(getattr(m, "content", ""))
+            status = "error" if content.strip().lower().startswith("tool error:") else "success"
+            tool_call_status[m.tool_call_id] = status
 
     for m in msgs:
         entry: Dict[str, Any] = {
@@ -112,6 +119,7 @@ def serialize_messages(msgs: List[Any]) -> List[Dict[str, Any]]:
                     "name": tc.get("name"),
                     "args": tc.get("args"),
                     "id": tc.get("id"),
+                    "status": tool_call_status.get(tc.get("id"), "unknown"),
                 }
                 for tc in m.tool_calls
             ]

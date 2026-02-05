@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import replace
-import json
 import logging
 import os
 from pathlib import Path
@@ -10,6 +9,7 @@ from pathlib import Path
 from .app import build_app
 from .config import load_config, resolve_data_dir
 from .evaluation import GOLD_RCA_DATASET, learning_curve, run_memory_ablation
+from .langfuse_datasets import build_datasets_from_gold_cases, create_dataset_items, run_dataset_experiment
 from .langfuse_prompts import sync_prompt_definitions
 from .memory import mark_memory_useful, semantic_recall
 from .memory_reflection import add_episodic_memory, add_procedural_memory, build_semantic_memory
@@ -160,10 +160,10 @@ def run_evals(case_id: str | None, learning_curve_only: bool) -> int:
             return 1
 
     if learning_curve_only:
-        recalls = learning_curve(app, cases)
-        print("Learning curve recalls:")
-        for case, recall in zip(cases, recalls, strict=False):
-            print(f"- {case.case_id}: {recall:.3f}")
+        correctness_scores = learning_curve(app, cases)
+        print("Learning curve correctness scores:")
+        for case, score in zip(cases, correctness_scores, strict=False):
+            print(f"- {case.case_id}: {score:.3f}")
         return 0
 
     print("Running memory ablation evals:")
@@ -174,22 +174,62 @@ def run_evals(case_id: str | None, learning_curve_only: bool) -> int:
         print(f"- {case.case_id}:")
         print(
             "  with_memory: "
-            f"precision={with_mem.precision:.3f}, "
-            f"recall={with_mem.recall:.3f}, "
-            f"hypothesis_coverage={with_mem.hypothesis_coverage:.3f}, "
-            f"evidence_score={with_mem.evidence_score:.3f}, "
-            f"process_compliance={with_mem.process_compliance}, "
-            f"forbidden_penalty={with_mem.forbidden_penalty}"
+            f"intent_resolution_accuracy={with_mem.intent_resolution_accuracy:.3f}, "
+            f"tool_call_accuracy={with_mem.tool_call_accuracy:.3f}, "
+            f"collaboration_quality={with_mem.collaboration_quality:.3f}, "
+            f"correctness={with_mem.correctness:.3f}, "
+            f"hallucination={with_mem.hallucination:.3f}, "
+            f"relevance={with_mem.relevance:.3f}, "
+            f"toxicity={with_mem.toxicity:.3f}, "
+            f"helpfulness={with_mem.helpfulness:.3f}, "
+            f"conciseness={with_mem.conciseness:.3f}"
         )
         print(
             "  without_memory: "
-            f"precision={without_mem.precision:.3f}, "
-            f"recall={without_mem.recall:.3f}, "
-            f"hypothesis_coverage={without_mem.hypothesis_coverage:.3f}, "
-            f"evidence_score={without_mem.evidence_score:.3f}, "
-            f"process_compliance={without_mem.process_compliance}, "
-            f"forbidden_penalty={without_mem.forbidden_penalty}"
+            f"intent_resolution_accuracy={without_mem.intent_resolution_accuracy:.3f}, "
+            f"tool_call_accuracy={without_mem.tool_call_accuracy:.3f}, "
+            f"collaboration_quality={without_mem.collaboration_quality:.3f}, "
+            f"correctness={without_mem.correctness:.3f}, "
+            f"hallucination={without_mem.hallucination:.3f}, "
+            f"relevance={without_mem.relevance:.3f}, "
+            f"toxicity={without_mem.toxicity:.3f}, "
+            f"helpfulness={without_mem.helpfulness:.3f}, "
+            f"conciseness={without_mem.conciseness:.3f}"
         )
+    return 0
+
+
+def run_langfuse_dataset_create(
+    dataset_name: str,
+) -> int:
+    config = load_config()
+    gold_cases = [case.__dict__ for case in GOLD_RCA_DATASET]
+    datasets = build_datasets_from_gold_cases(gold_cases)
+    if not datasets:
+        print("No dataset items generated.")
+        return 1
+    uploaded = create_dataset_items(config, dataset_name, datasets)
+    print(f"Uploaded {uploaded} dataset items to {dataset_name}.")
+    return 0
+
+
+def run_langfuse_experiment(
+    dataset_name: str,
+    prompt_name: str,
+    prompt_label: str | None,
+    experiment_name: str,
+    experiment_description: str | None,
+) -> int:
+    config = load_config()
+    run_dataset_experiment(
+        config,
+        dataset_name=dataset_name,
+        prompt_name=prompt_name,
+        prompt_label=prompt_label,
+        experiment_name=experiment_name,
+        experiment_description=experiment_description,
+    )
+    print(f"Started Langfuse experiment {experiment_name} on dataset {dataset_name}.")
     return 0
 
 
@@ -221,6 +261,21 @@ def main(argv: list[str] | None = None):
         action="store_true",
         help="Run learning curve evaluation only",
     )
+    dataset_parser = subparsers.add_parser(
+        "langfuse-create-dataset",
+        help="Upload Langfuse dataset items from the GOLD_RCA_DATASET cases",
+    )
+    dataset_parser.add_argument("--dataset-name", required=True)
+
+    experiment_parser = subparsers.add_parser(
+        "langfuse-run-experiment",
+        help="Run a Langfuse dataset experiment with LLM-judge evaluators",
+    )
+    experiment_parser.add_argument("--dataset-name", required=True)
+    experiment_parser.add_argument("--prompt-name", required=True)
+    experiment_parser.add_argument("--prompt-label", default=None)
+    experiment_parser.add_argument("--experiment-name", required=True)
+    experiment_parser.add_argument("--experiment-description", default=None)
 
     args = parser.parse_args(argv)
 
@@ -259,6 +314,16 @@ def main(argv: list[str] | None = None):
         return 0
     if args.command == "eval":
         return run_evals(args.case_id, args.learning_curve)
+    if args.command == "langfuse-create-dataset":
+        return run_langfuse_dataset_create(args.dataset_name)
+    if args.command == "langfuse-run-experiment":
+        return run_langfuse_experiment(
+            args.dataset_name,
+            args.prompt_name,
+            args.prompt_label,
+            args.experiment_name,
+            args.experiment_description,
+        )
 
     parser.print_help()
     return 1
