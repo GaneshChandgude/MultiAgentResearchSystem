@@ -238,6 +238,24 @@ Open the notebook to explore RCA analysis steps and data summaries:
 jupyter notebook RCA.ipynb
 ```
 
+### Create a Langfuse dataset from built-in gold cases (optional)
+
+Generate dataset items from `GOLD_RCA_DATASET` and upload them to Langfuse:
+
+```bash
+rca-app langfuse-create-dataset --dataset-name rca-gold-cases
+```
+
+Then run an experiment against that dataset:
+
+```bash
+rca-app langfuse-run-experiment \
+  --dataset-name rca-gold-cases \
+  --prompt-name rca_root_cause_prompt \
+  --prompt-label production \
+  --experiment-name rca-baseline
+```
+
 ### Sync Langfuse prompt definitions (optional)
 
 If Langfuse prompt management is enabled, you can create or update prompt templates
