@@ -7,34 +7,10 @@ from typing import Any, Dict, List, Optional
 
 from .app import RCAApp
 from .observability import build_langfuse_client, build_langfuse_invoke_config
-from .langfuse_prompts import REPORT_AGENT_PROMPT
 from .utils import extract_json_from_response, process_response
 
 logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
-
-
-TOOL_TO_AGENT = {
-    "hypothesis_agent_tool": "HypothesisAgent",
-    "sales_analysis_agent_tool": "SalesAnalysisAgent",
-    "inventory_analysis_agent_tool": "InventoryAnalysisAgent",
-    "hypothesis_validation_agent_tool": "HypothesisValidationAgent",
-    "root_cause_analysis_agent_tool": "RootCauseAgent",
-    "rca_report_agent_tool": "ReportAgent",
-    "write_todos": "OrchestrationAgent",
-}
-
-
-REQUIRED_REPORT_SECTIONS = [
-    "Executive Summary",
-    "Primary Root Cause(s)",
-    "Supporting Evidence",
-    "Contributing Factors",
-    "Key Data Points",
-    "Timeline of Events",
-    "Recommendations",
-    "Final Conclusion",
-]
 
 
 def normalize_trace(trace: Any) -> List[Dict[str, Any]]:
@@ -56,33 +32,6 @@ def iter_trace_messages(trace: Any) -> List[Dict[str, Any]]:
         elif entry.get("type") in {"AIMessage", "ToolMessage"}:
             messages.append(entry)
     return messages
-
-
-def flatten_trace(result: Dict[str, Any]) -> List[Dict[str, Any]]:
-    flat = []
-    for msg in iter_trace_messages(result.get("trace")):
-        if msg.get("tool_calls"):
-            for call in msg["tool_calls"]:
-                agent = TOOL_TO_AGENT.get(call["name"], call["name"])
-                flat.append(
-                    {
-                        "agent": agent,
-                        "tool": call["name"],
-                        "args": call.get("args", {}),
-                        "call_id": call.get("id"),
-                    }
-                )
-
-        if msg.get("type") == "ToolMessage":
-            flat.append(
-                {
-                    "agent": "ToolResult",
-                    "content": msg.get("content"),
-                    "tool_call_id": msg.get("tool_call_id"),
-                }
-            )
-
-    return flat
 
 
 def _parse_tool_output(content: Any) -> Optional[Dict[str, Any]]:
@@ -168,81 +117,34 @@ GOLD_RCA_DATASET: List[GoldRCACase] = [
 
 @dataclass
 class EvalScores:
-    precision: float
-    recall: float
-    hypothesis_coverage: float
-    evidence_score: float
-    process_compliance: bool
-    forbidden_penalty: bool
-
-
-def normalize(text: str) -> str:
-    return text.lower().strip()
-
-
-def semantic_match(a: str, b: str) -> bool:
-    a, b = normalize(a), normalize(b)
-    return a in b or b in a
-
-
-def count_semantic_matches(predicted: List[str], gold: List[str]) -> int:
-    count = 0
-    for g in gold:
-        if any(semantic_match(p, g) for p in predicted):
-            count += 1
-    return count
-
-
-def check_process_order(trace: List[Dict[str, Any]], required_agents: List[str]) -> bool:
-    executed = {t["agent"] for t in trace}
-    return all(agent in executed for agent in required_agents)
-
-
-def evidence_backed(validated: Dict[str, bool], trace: List[Dict[str, Any]]) -> float:
-    if not validated:
-        return 0.0
-
-    evidence_agents = {"SalesAnalysisAgent", "InventoryAnalysisAgent"}
-    used_agents = {t["agent"] for t in trace}
-    has_evidence = evidence_agents.intersection(used_agents)
-
-    supported = sum(1 for v in validated.values() if v and has_evidence)
-
-    return supported / max(len(validated), 1)
+    intent_resolution_accuracy: float
+    tool_call_accuracy: float
+    collaboration_quality: float
+    correctness: float
+    hallucination: float
+    relevance: float
+    toxicity: float
+    helpfulness: float
+    conciseness: float
 
 
 def evaluate_single_case(app: RCAApp, gold: GoldRCACase, rca_output: Dict[str, Any]) -> EvalScores:
-    trace = flatten_trace(rca_output)
     response = rca_output.get("response", "")
     if not response:
         response = rca_output.get("output", "")
-    root_cause_eval = evaluate_report_response(app, gold, response)
-    root_causes = root_cause_eval.get("identified_root_causes", [])
-    hypotheses = rca_output.get("hypotheses", [])
-    validated = rca_output.get("validated", {})
 
-    matched = count_semantic_matches(root_causes, gold.expected_root_causes)
-    precision = matched / max(len(root_causes), 1)
-    recall = matched / max(len(gold.expected_root_causes), 1)
-
-    coverage = count_semantic_matches(hypotheses, gold.gold_hypotheses)
-    hypothesis_coverage = coverage / max(len(gold.gold_hypotheses), 1)
-
-    evidence = evidence_backed(validated, trace)
-
-    process_ok = check_process_order(trace, gold.must_use_agents)
-
-    forbidden_penalty = any(
-        semantic_match(rc, f) for rc in root_causes for f in gold.forbidden_root_causes
-    )
+    judge_scores = evaluate_orchestration_llm_judge(app, gold, response, rca_output.get("trace"))
 
     return EvalScores(
-        precision=precision,
-        recall=recall,
-        hypothesis_coverage=hypothesis_coverage,
-        evidence_score=evidence,
-        process_compliance=process_ok,
-        forbidden_penalty=forbidden_penalty,
+        intent_resolution_accuracy=judge_scores["intent_resolution_accuracy"],
+        tool_call_accuracy=judge_scores["tool_call_accuracy"],
+        collaboration_quality=judge_scores["collaboration_quality"],
+        correctness=judge_scores["correctness"],
+        hallucination=judge_scores["hallucination"],
+        relevance=judge_scores["relevance"],
+        toxicity=judge_scores["toxicity"],
+        helpfulness=judge_scores["helpfulness"],
+        conciseness=judge_scores["conciseness"],
     )
 
 
@@ -260,30 +162,54 @@ def extract_validated(result: Dict[str, Any]) -> Dict[str, Any]:
     return {}
 
 
-def evaluate_report_response(app: RCAApp, gold: GoldRCACase, response: str) -> Dict[str, Any]:
-    if not response:
-        return {"identified_root_causes": [], "missing_sections": REQUIRED_REPORT_SECTIONS}
+def _coerce_score(value: Any) -> float:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(1.0, score))
 
+
+def _extract_tool_calls(trace: Any) -> List[Dict[str, Any]]:
+    for entry in normalize_trace(trace):
+        if entry.get("agent") == "Orchestration Agent":
+            tool_calls = entry.get("tool_calls", [])
+            if isinstance(tool_calls, list):
+                return tool_calls
+    return []
+
+
+def evaluate_orchestration_llm_judge(
+    app: RCAApp,
+    gold: GoldRCACase,
+    response: str,
+    trace: Any,
+) -> Dict[str, float]:
+    tool_calls = _extract_tool_calls(trace)
     system_prompt = (
-        "You are evaluating a Root Cause Analysis report for correctness and structure. "
-        "Use the report requirements below to judge section coverage and root-cause alignment. "
-        "Ignore any report-generation instructions about output format; you must return JSON only.\n\n"
-        f"{REPORT_AGENT_PROMPT}\n\n"
-        "Return JSON only with the following schema:\n"
+        "You are evaluating the Orchestration Agent output for a multi-agent RCA workflow. "
+        "Score each metric from 0 to 1 where 1 is best. "
+        "Use the task, expected outputs, agent response, and tool call trace. "
+        "Return JSON only with the schema:\n"
         "{\n"
-        '  "identified_root_causes": [string],\n'
-        '  "matched_expected_root_causes": [string],\n'
-        '  "missing_expected_root_causes": [string],\n'
-        '  "missing_sections": [string]\n'
+        '  "intent_resolution_accuracy": number,\n'
+        '  "tool_call_accuracy": number,\n'
+        '  "collaboration_quality": number,\n'
+        '  "correctness": number,\n'
+        '  "hallucination": number,\n'
+        '  "relevance": number,\n'
+        '  "toxicity": number,\n'
+        '  "helpfulness": number,\n'
+        '  "conciseness": number\n'
         "}\n"
     )
     user_prompt = (
-        "Expected root causes:\n"
-        f"{gold.expected_root_causes}\n\n"
-        "Required sections:\n"
-        f"{REQUIRED_REPORT_SECTIONS}\n\n"
-        "Report:\n"
-        f"{response}"
+        f"Task:\n{gold.task}\n\n"
+        f"Expected root causes:\n{gold.expected_root_causes}\n\n"
+        f"Expected hypotheses:\n{gold.gold_hypotheses}\n\n"
+        f"Forbidden root causes:\n{gold.forbidden_root_causes}\n\n"
+        f"Agent response:\n{response}\n\n"
+        f"Tool calls:\n{tool_calls}\n"
     )
     message_payload = [
         {"role": "system", "content": system_prompt},
@@ -292,20 +218,31 @@ def evaluate_report_response(app: RCAApp, gold: GoldRCACase, response: str) -> D
     try:
         model_response = app.llm.invoke(message_payload)
         parsed = process_response(model_response.content, llm=app.llm, app_config=app.config)
-        if isinstance(parsed, dict):
-            return parsed
-        raise ValueError(f"Unexpected evaluation payload: {type(parsed)}")
-    except Exception as exc:
-        logger.warning("Report evaluation failed; falling back to heuristic matching: %s", exc)
-        identified = [rc for rc in gold.expected_root_causes if semantic_match(rc, response)]
-        missing_sections = [s for s in REQUIRED_REPORT_SECTIONS if s.lower() not in response.lower()]
+        if not isinstance(parsed, dict):
+            raise ValueError(f"Unexpected evaluation payload: {type(parsed)}")
         return {
-            "identified_root_causes": identified,
-            "matched_expected_root_causes": identified,
-            "missing_expected_root_causes": [
-                rc for rc in gold.expected_root_causes if rc not in identified
-            ],
-            "missing_sections": missing_sections,
+            "intent_resolution_accuracy": _coerce_score(parsed.get("intent_resolution_accuracy")),
+            "tool_call_accuracy": _coerce_score(parsed.get("tool_call_accuracy")),
+            "collaboration_quality": _coerce_score(parsed.get("collaboration_quality")),
+            "correctness": _coerce_score(parsed.get("correctness")),
+            "hallucination": _coerce_score(parsed.get("hallucination")),
+            "relevance": _coerce_score(parsed.get("relevance")),
+            "toxicity": _coerce_score(parsed.get("toxicity")),
+            "helpfulness": _coerce_score(parsed.get("helpfulness")),
+            "conciseness": _coerce_score(parsed.get("conciseness")),
+        }
+    except Exception as exc:
+        logger.warning("Orchestration LLM judge failed; returning zeros: %s", exc)
+        return {
+            "intent_resolution_accuracy": 0.0,
+            "tool_call_accuracy": 0.0,
+            "collaboration_quality": 0.0,
+            "correctness": 0.0,
+            "hallucination": 0.0,
+            "relevance": 0.0,
+            "toxicity": 0.0,
+            "helpfulness": 0.0,
+            "conciseness": 0.0,
         }
 
 
@@ -342,12 +279,15 @@ def log_eval_scores(
 
     metadata = build_eval_metadata(case_id, app.config.langfuse_prompt_label, memory_enabled)
     score_map = {
-        "precision": (scores.precision, "NUMERIC"),
-        "recall": (scores.recall, "NUMERIC"),
-        "hypothesis_coverage": (scores.hypothesis_coverage, "NUMERIC"),
-        "evidence_score": (scores.evidence_score, "NUMERIC"),
-        "process_compliance": (scores.process_compliance, "BOOLEAN"),
-        "forbidden_penalty": (scores.forbidden_penalty, "BOOLEAN"),
+        "intent_resolution_accuracy": (scores.intent_resolution_accuracy, "NUMERIC"),
+        "tool_call_accuracy": (scores.tool_call_accuracy, "NUMERIC"),
+        "collaboration_quality": (scores.collaboration_quality, "NUMERIC"),
+        "correctness": (scores.correctness, "NUMERIC"),
+        "hallucination": (scores.hallucination, "NUMERIC"),
+        "relevance": (scores.relevance, "NUMERIC"),
+        "toxicity": (scores.toxicity, "NUMERIC"),
+        "helpfulness": (scores.helpfulness, "NUMERIC"),
+        "conciseness": (scores.conciseness, "NUMERIC"),
     }
     for metric, (value, data_type) in score_map.items():
         client.create_score(
@@ -436,7 +376,7 @@ def run_memory_ablation(app: RCAApp, case: GoldRCACase) -> Dict[str, EvalScores]
 
 
 def learning_curve(app: RCAApp, cases: List[GoldRCACase]) -> List[float]:
-    recalls = []
+    correctness_scores = []
     for c in cases:
         query_id = f"eval_{c.case_id}_learning_curve"
         config = {"configurable": {"user_id": "eval_user", "thread_id": "eval_user"}}
@@ -461,6 +401,6 @@ def learning_curve(app: RCAApp, cases: List[GoldRCACase]) -> List[float]:
                 "trace": normalized_trace,
             },
         )
-        recalls.append(score.recall)
+        correctness_scores.append(score.correctness)
         log_eval_scores(app, score, c.case_id, "learning_curve", query_id, None)
-    return recalls
+    return correctness_scores
