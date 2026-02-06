@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .app import build_app
 from .config import load_config, resolve_data_dir
-from .evaluation import GOLD_RCA_DATASET, learning_curve, run_memory_ablation
+from .evaluation import GOLD_RCA_DATASET, learning_curve, run_rca_with_memory, evaluate_single_case
 from .langfuse_datasets import build_datasets_from_gold_cases, create_dataset_items, run_dataset_experiment
 from .langfuse_prompts import sync_prompt_definitions
 from .memory import mark_memory_useful, semantic_recall
@@ -167,11 +167,10 @@ def run_evals(case_id: str | None, learning_curve_only: bool) -> int:
             print(f"- {case.case_id}: {score:.3f}")
         return 0
 
-    print("Running memory ablation evals:")
+    print("Running RCA evals:")
     for case in cases:
-        scores = run_memory_ablation(app, case)
-        with_mem = scores["with_memory"]
-        without_mem = scores["without_memory"]
+        rca_output = run_rca_with_memory(app, case)
+        with_mem = evaluate_single_case(app, case, rca_output)
         print(f"- {case.case_id}:")
         print(
             "  with_memory: "
@@ -184,18 +183,6 @@ def run_evals(case_id: str | None, learning_curve_only: bool) -> int:
             f"toxicity={with_mem.toxicity:.3f}, "
             f"helpfulness={with_mem.helpfulness:.3f}, "
             f"conciseness={with_mem.conciseness:.3f}"
-        )
-        print(
-            "  without_memory: "
-            f"intent_resolution_accuracy={without_mem.intent_resolution_accuracy:.3f}, "
-            f"tool_call_accuracy={without_mem.tool_call_accuracy:.3f}, "
-            f"collaboration_quality={without_mem.collaboration_quality:.3f}, "
-            f"correctness={without_mem.correctness:.3f}, "
-            f"hallucination={without_mem.hallucination:.3f}, "
-            f"relevance={without_mem.relevance:.3f}, "
-            f"toxicity={without_mem.toxicity:.3f}, "
-            f"helpfulness={without_mem.helpfulness:.3f}, "
-            f"conciseness={without_mem.conciseness:.3f}"
         )
     return 0
 

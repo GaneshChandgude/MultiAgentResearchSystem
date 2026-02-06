@@ -323,58 +323,6 @@ def run_rca_with_memory(app: RCAApp, case: GoldRCACase) -> Dict[str, Any]:
     }
 
 
-def run_rca_without_memory(app: RCAApp, case: GoldRCACase) -> Dict[str, Any]:
-    query_id = f"eval_{case.case_id}_without_memory"
-    config = {
-        "configurable": {"user_id": "eval_user_nomem", "thread_id": "eval_user_nomem", "memory_enabled": False}
-    }
-    empty_state = {"task": case.task, "output": "", "trace": []}
-    observability_config = build_langfuse_invoke_config(
-        app.config,
-        user_id="eval_user_nomem",
-        query_id=query_id,
-        tags=build_eval_tags(app.config.langfuse_prompt_label, "without_memory"),
-        metadata=build_eval_metadata(case.case_id, app.config.langfuse_prompt_label, False),
-    )
-    logger.info("Running RCA evaluation without memory")
-    result = app.app.invoke(empty_state, {**config, **observability_config})
-    normalized_trace = normalize_trace(result.get("trace"))
-    return {
-        "root_cause": extract_root_cause({"trace": normalized_trace}),
-        "hypotheses": extract_hypotheses({"trace": normalized_trace}),
-        "validated": extract_validated({"trace": normalized_trace}),
-        "response": result.get("output", ""),
-        "trace": normalized_trace,
-    }
-
-
-def run_memory_ablation(app: RCAApp, case: GoldRCACase) -> Dict[str, EvalScores]:
-    out_mem = run_rca_with_memory(app, case)
-    out_nomem = run_rca_without_memory(app, case)
-    with_memory_scores = evaluate_single_case(app, case, out_mem)
-    without_memory_scores = evaluate_single_case(app, case, out_nomem)
-    log_eval_scores(
-        app,
-        with_memory_scores,
-        case.case_id,
-        "with_memory",
-        f"eval_{case.case_id}_with_memory",
-        True,
-    )
-    log_eval_scores(
-        app,
-        without_memory_scores,
-        case.case_id,
-        "without_memory",
-        f"eval_{case.case_id}_without_memory",
-        False,
-    )
-    return {
-        "with_memory": with_memory_scores,
-        "without_memory": without_memory_scores,
-    }
-
-
 def learning_curve(app: RCAApp, cases: List[GoldRCACase]) -> List[float]:
     correctness_scores = []
     for c in cases:
