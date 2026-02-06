@@ -40,6 +40,7 @@ def build_langfuse_callbacks(
     query_id: str | None = None,
     metadata: Dict[str, Any] | None = None,
     tags: List[str] | None = None,
+    trace_context: Dict[str, Any] | None = None,
 ) -> List[BaseCallbackHandler]:
     if not config.langfuse_enabled:
         return []
@@ -77,6 +78,8 @@ def build_langfuse_callbacks(
         handler_kwargs["metadata"] = metadata
     if tags:
         handler_kwargs["tags"] = tags
+    if trace_context:
+        handler_kwargs["trace_context"] = trace_context
 
     supported_params = set(inspect.signature(CallbackHandler).parameters)
     filtered_kwargs = {key: value for key, value in handler_kwargs.items() if key in supported_params}
@@ -125,6 +128,7 @@ def build_langfuse_invoke_config(
     query_id: str | None = None,
     metadata: Dict[str, Any] | None = None,
     tags: List[str] | None = None,
+    trace_context: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     callbacks = build_langfuse_callbacks(
         config,
@@ -132,6 +136,7 @@ def build_langfuse_invoke_config(
         query_id=query_id,
         metadata=metadata,
         tags=tags,
+        trace_context=trace_context,
     )
     if not callbacks:
         return {}
