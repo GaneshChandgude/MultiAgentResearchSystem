@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 import httpx
 from langfuse import Langfuse, observe
 from langfuse.langchain import CallbackHandler
+from langchain_core.messages import AIMessage, HumanMessage
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -346,4 +347,34 @@ async def list_chats(user_id: str) -> Dict[str, Any]:
 @observe()
 async def submit_feedback(payload: FeedbackRequest) -> Dict[str, str]:
     feedback_id = store.save_feedback(payload.chat_id, payload.user_id, payload.rating, payload.comments)
+    try:
+        chat = store.get_chat(payload.chat_id)
+        rating_label = "positive" if payload.rating >= 4 else "negative"
+        feedback_text = (payload.comments or "").strip()
+        if not feedback_text:
+            feedback_text = "No additional comments."
+        feedback_message = HumanMessage(
+            content=f"USER_FEEDBACK ({rating_label}, rating={payload.rating}): {feedback_text}"
+        )
+        rca_state = {
+            "history": [
+                HumanMessage(content=chat.get("query", "")),
+                AIMessage(content=chat.get("response", "")),
+                feedback_message,
+            ]
+        }
+        config = {
+            "configurable": {
+                "user_id": payload.user_id,
+                "thread_id": payload.user_id,
+                "query_id": payload.chat_id,
+            }
+        }
+        app_config = _build_user_config(payload.user_id)
+        rca_app = _get_rca_app(app_config)
+        add_episodic_memory(rca_state, config, rca_app.store, rca_app.llm, rca_app.config)
+    except KeyError:
+        logger.warning("Feedback submitted for unknown chat_id=%s", payload.chat_id)
+    except Exception:
+        logger.exception("Failed to store feedback memory for chat_id=%s", payload.chat_id)
     return {"status": "received", "feedback_id": feedback_id}

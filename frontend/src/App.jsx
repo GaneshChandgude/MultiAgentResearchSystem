@@ -441,6 +441,12 @@ function ResponseActions({ userId, message }) {
   const [showTrace, setShowTrace] = useState(false);
   const selected = rating ? (rating === "up" ? "up" : "down") : null;
   const canSubmit = !!message.chatId && !sending && !sent;
+  const feedbackPrompt =
+    rating === "up" ? "What worked well?" : "What went wrong?";
+  const feedbackPlaceholder =
+    rating === "up"
+      ? "Share what was helpful so we can keep it consistent."
+      : "Share details to help us improve the response.";
 
   const sendFeedback = async (nextRating, nextComments = "") => {
     if (!message.chatId || sent) return;
@@ -464,19 +470,20 @@ function ResponseActions({ userId, message }) {
   };
 
   const handleLike = () => {
-    if (!canSubmit) return;
+    if (sent) return;
     setRating("up");
-    sendFeedback("up");
+    setComments("");
   };
 
   const handleDislike = () => {
     if (sent) return;
     setRating("down");
+    setComments("");
   };
 
-  const submitDislike = () => {
-    if (!canSubmit || rating !== "down") return;
-    sendFeedback("down", comments);
+  const submitFeedback = () => {
+    if (!canSubmit || !rating) return;
+    sendFeedback(rating, comments);
   };
 
   return (
@@ -507,17 +514,17 @@ function ResponseActions({ userId, message }) {
           {showTrace ? "Hide agentic trace" : "Agentic trace"}
         </button>
       </div>
-      {rating === "down" && !sent ? (
+      {rating && !sent ? (
         <div className="feedback-form">
           <div className="input-group">
-            <label>What went wrong?</label>
+            <label>{feedbackPrompt}</label>
             <textarea
               value={comments}
               onChange={(event) => setComments(event.target.value)}
-              placeholder="Share details to help us improve the response."
+              placeholder={feedbackPlaceholder}
             />
           </div>
-          <button className="btn btn-primary" onClick={submitDislike} disabled={!canSubmit}>
+          <button className="btn btn-primary" onClick={submitFeedback} disabled={!canSubmit}>
             {sending ? "Sending..." : "Submit feedback"}
           </button>
         </div>
