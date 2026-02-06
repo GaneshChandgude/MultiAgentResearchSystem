@@ -9,7 +9,13 @@ from pathlib import Path
 
 from .app import build_app
 from .config import load_config, resolve_data_dir
-from .evaluation import GOLD_RCA_DATASET, learning_curve, run_rca_with_memory, evaluate_single_case
+from .evaluation import (
+    GOLD_RCA_DATASET,
+    evaluate_single_case,
+    learning_curve,
+    log_eval_scores,
+    run_rca_with_memory,
+)
 from .langfuse_datasets import build_datasets_from_gold_cases, create_dataset_items, run_dataset_experiment
 from .langfuse_prompts import sync_prompt_definitions
 from .memory import mark_memory_useful, semantic_recall
@@ -171,6 +177,9 @@ def run_evals(case_id: str | None, learning_curve_only: bool) -> int:
     for case in cases:
         rca_output = run_rca_with_memory(app, case)
         with_mem = evaluate_single_case(app, case, rca_output)
+        session_id = rca_output.get("session_id", f"eval_{case.case_id}_with_memory")
+        trace_id = rca_output.get("trace_id")
+        log_eval_scores(app, with_mem, case.case_id, "with_memory", session_id, True, trace_id)
         print(f"- {case.case_id}:")
         print(
             "  with_memory: "

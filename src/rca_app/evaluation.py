@@ -272,6 +272,7 @@ def log_eval_scores(
     run_label: str,
     session_id: str,
     memory_enabled: bool | None,
+    trace_id: str | None = None,
 ) -> None:
     client = build_langfuse_client(app.config)
     if not client:
@@ -295,6 +296,7 @@ def log_eval_scores(
             value=value,
             data_type=data_type,
             session_id=session_id,
+            trace_id=trace_id,
             metadata=metadata,
         )
     client.flush()
@@ -302,6 +304,15 @@ def log_eval_scores(
 
 def run_rca_with_memory(app: RCAApp, case: GoldRCACase) -> Dict[str, Any]:
     query_id = f"eval_{case.case_id}_with_memory"
+    trace_id = None
+    trace_context = None
+    client = build_langfuse_client(app.config)
+    if client:
+        try:
+            trace_id = client.create_trace_id()
+            trace_context = {"trace_id": trace_id}
+        except Exception as exc:
+            logger.warning("Failed to create Langfuse trace id for eval run: %s", exc)
     config = {"configurable": {"user_id": "eval_user", "thread_id": "eval_user", "memory_enabled": True}}
     rca_state = {"task": case.task, "output": "", "trace": []}
     observability_config = build_langfuse_invoke_config(
@@ -310,6 +321,7 @@ def run_rca_with_memory(app: RCAApp, case: GoldRCACase) -> Dict[str, Any]:
         query_id=query_id,
         tags=build_eval_tags(app.config.langfuse_prompt_label, "with_memory"),
         metadata=build_eval_metadata(case.case_id, app.config.langfuse_prompt_label, True),
+        trace_context=trace_context,
     )
     logger.info("Running RCA evaluation with memory")
     result = app.app.invoke(rca_state, {**config, **observability_config})
@@ -320,13 +332,24 @@ def run_rca_with_memory(app: RCAApp, case: GoldRCACase) -> Dict[str, Any]:
         "validated": extract_validated({"trace": normalized_trace}),
         "response": result.get("output", ""),
         "trace": normalized_trace,
+        "trace_id": trace_id,
+        "session_id": query_id,
     }
 
 
 def learning_curve(app: RCAApp, cases: List[GoldRCACase]) -> List[float]:
     correctness_scores = []
+    client = build_langfuse_client(app.config)
     for c in cases:
         query_id = f"eval_{c.case_id}_learning_curve"
+        trace_id = None
+        trace_context = None
+        if client:
+            try:
+                trace_id = client.create_trace_id()
+                trace_context = {"trace_id": trace_id}
+            except Exception as exc:
+                logger.warning("Failed to create Langfuse trace id for eval run: %s", exc)
         config = {"configurable": {"user_id": "eval_user", "thread_id": "eval_user"}}
         observability_config = build_langfuse_invoke_config(
             app.config,
@@ -334,6 +357,7 @@ def learning_curve(app: RCAApp, cases: List[GoldRCACase]) -> List[float]:
             query_id=query_id,
             tags=build_eval_tags(app.config.langfuse_prompt_label, "learning_curve"),
             metadata=build_eval_metadata(c.case_id, app.config.langfuse_prompt_label, None),
+            trace_context=trace_context,
         )
         rca_state = {"task": c.task, "output": "", "trace": []}
         out = app.app.invoke(rca_state, {**config, **observability_config})
@@ -350,5 +374,5 @@ def learning_curve(app: RCAApp, cases: List[GoldRCACase]) -> List[float]:
             },
         )
         correctness_scores.append(score.correctness)
-        log_eval_scores(app, score, c.case_id, "learning_curve", query_id, None)
+        log_eval_scores(app, score, c.case_id, "learning_curve", query_id, None, trace_id)
     return correctness_scores
