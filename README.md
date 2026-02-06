@@ -251,7 +251,7 @@ Then run an experiment against that dataset:
 ```bash
 rca-app langfuse-run-experiment \
   --dataset-name rca-gold-cases \
-  --prompt-name rca_root_cause_prompt \
+  --prompt-name rca.orchestration.system \
   --prompt-label production \
   --experiment-name rca-baseline
 ```
