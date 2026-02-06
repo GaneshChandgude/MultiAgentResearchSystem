@@ -246,6 +246,26 @@ class UIStore:
             )
         return chats
 
+    def get_chat(self, chat_id: str) -> Dict[str, Any]:
+        cursor = self._conn.execute(
+            """
+            SELECT id, user_id, query, response, trace, created_at
+            FROM chats WHERE id = ?
+            """,
+            (chat_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise KeyError("Chat not found")
+        return {
+            "id": row[0],
+            "user_id": row[1],
+            "query": row[2],
+            "response": row[3],
+            "trace": json.loads(row[4]),
+            "created_at": row[5],
+        }
+
     def save_feedback(self, chat_id: str, user_id: str, rating: int, comments: str | None) -> str:
         feedback_id = str(uuid4())
         with self._conn:
