@@ -11,8 +11,10 @@ from .app import build_app
 from .config import load_config, resolve_data_dir
 from .evaluation import (
     GOLD_RCA_DATASET,
+    evaluate_consistency,
     evaluate_single_case,
     learning_curve,
+    log_consistency_scores,
     log_eval_scores,
     run_rca_with_memory,
 )
@@ -156,7 +158,7 @@ def inspect_memory():
     print("--------------------------------------------------------------------------")
 
 
-def run_evals(case_id: str | None, learning_curve_only: bool) -> int:
+def run_evals(case_id: str | None, learning_curve_only: bool, consistency_runs: int) -> int:
     config = load_config()
     app = build_app(config)
     cases = GOLD_RCA_DATASET
@@ -191,8 +193,26 @@ def run_evals(case_id: str | None, learning_curve_only: bool) -> int:
             f"relevance={with_mem.relevance:.3f}, "
             f"toxicity={with_mem.toxicity:.3f}, "
             f"helpfulness={with_mem.helpfulness:.3f}, "
-            f"conciseness={with_mem.conciseness:.3f}"
+            f"conciseness={with_mem.conciseness:.3f}, "
+            f"latency_ms={with_mem.latency_ms:.1f}, "
+            f"tool_call_count={with_mem.tool_call_count}"
         )
+        if consistency_runs > 1:
+            consistency = evaluate_consistency(app, case, runs=consistency_runs, memory_enabled=False)
+            log_consistency_scores(
+                app,
+                consistency,
+                case.case_id,
+                "consistency",
+                session_id,
+                False,
+                trace_id,
+            )
+            print(
+                "  consistency: "
+                f"correctness_variance={consistency.correctness_variance:.4f}, "
+                f"root_cause_agreement={consistency.root_cause_agreement:.3f}"
+            )
     return 0
 
 
@@ -258,6 +278,12 @@ def main(argv: list[str] | None = None):
         action="store_true",
         help="Run learning curve evaluation only",
     )
+    eval_parser.add_argument(
+        "--consistency-runs",
+        type=int,
+        default=1,
+        help="Run multi-run consistency evaluation with N runs per case",
+    )
     dataset_parser = subparsers.add_parser(
         "langfuse-create-dataset",
         help="Upload Langfuse dataset items from the GOLD_RCA_DATASET cases",
@@ -310,7 +336,7 @@ def main(argv: list[str] | None = None):
         print(f"Synced {synced} Langfuse prompts.")
         return 0
     if args.command == "eval":
-        return run_evals(args.case_id, args.learning_curve)
+        return run_evals(args.case_id, args.learning_curve, args.consistency_runs)
     if args.command == "langfuse-create-dataset":
         return run_langfuse_dataset_create(args.dataset_name)
     if args.command == "langfuse-run-experiment":

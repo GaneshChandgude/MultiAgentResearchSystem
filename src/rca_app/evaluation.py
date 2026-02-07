@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import logging
+import statistics
+import time
 from typing import Any, Dict, List, Optional
 
 from .app import RCAApp
@@ -227,6 +229,14 @@ class EvalScores:
     required_agents_coverage: float
     expected_root_cause_recall: float
     forbidden_root_cause_compliance: float
+    latency_ms: float
+    tool_call_count: int
+
+
+@dataclass
+class ConsistencyScores:
+    correctness_variance: float
+    root_cause_agreement: float
 
 
 def evaluate_single_case(app: RCAApp, gold: GoldRCACase, rca_output: Dict[str, Any]) -> EvalScores:
@@ -252,6 +262,8 @@ def evaluate_single_case(app: RCAApp, gold: GoldRCACase, rca_output: Dict[str, A
         required_agents_coverage=required_agents_coverage,
         expected_root_cause_recall=root_cause_recall,
         forbidden_root_cause_compliance=forbidden_root_cause_compliance,
+        latency_ms=float(rca_output.get("latency_ms", 0.0) or 0.0),
+        tool_call_count=int(rca_output.get("tool_call_count", 0) or 0),
     )
 
 
@@ -351,6 +363,18 @@ def _extract_tool_calls(trace: Any) -> List[Dict[str, Any]]:
             if isinstance(tool_calls, list):
                 return tool_calls
     return []
+
+
+def count_tool_calls(trace: Any) -> int:
+    count = 0
+    for entry in normalize_trace(trace):
+        tool_calls = entry.get("tool_calls")
+        if not isinstance(tool_calls, list):
+            continue
+        for call in tool_calls:
+            if isinstance(call, dict) and call.get("name"):
+                count += 1
+    return count
 
 
 def evaluate_orchestration_llm_judge(
@@ -456,6 +480,8 @@ def log_eval_scores(
         "required_agents_coverage": (scores.required_agents_coverage, "NUMERIC"),
         "expected_root_cause_recall": (scores.expected_root_cause_recall, "NUMERIC"),
         "forbidden_root_cause_compliance": (scores.forbidden_root_cause_compliance, "NUMERIC"),
+        "latency_ms": (scores.latency_ms, "NUMERIC"),
+        "tool_call_count": (float(scores.tool_call_count), "NUMERIC"),
     }
     for metric, (value, data_type) in score_map.items():
         client.create_score(
@@ -469,8 +495,45 @@ def log_eval_scores(
     client.flush()
 
 
-def run_rca_with_memory(app: RCAApp, case: GoldRCACase) -> Dict[str, Any]:
-    query_id = f"eval_{case.case_id}_with_memory"
+def log_consistency_scores(
+    app: RCAApp,
+    scores: ConsistencyScores,
+    case_id: str,
+    run_label: str,
+    session_id: str,
+    memory_enabled: bool | None,
+    trace_id: str | None = None,
+) -> None:
+    client = build_langfuse_client(app.config)
+    if not client:
+        return
+
+    metadata = build_eval_metadata(case_id, app.config.langfuse_prompt_label, memory_enabled)
+    score_map = {
+        "correctness_variance": (scores.correctness_variance, "NUMERIC"),
+        "root_cause_agreement": (scores.root_cause_agreement, "NUMERIC"),
+    }
+    for metric, (value, data_type) in score_map.items():
+        client.create_score(
+            name=f"eval_{run_label}_{metric}",
+            value=value,
+            data_type=data_type,
+            session_id=session_id,
+            trace_id=trace_id,
+            metadata=metadata,
+        )
+    client.flush()
+
+
+def run_rca_eval_case(
+    app: RCAApp,
+    case: GoldRCACase,
+    run_label: str,
+    run_index: int | None = None,
+    memory_enabled: bool = True,
+) -> Dict[str, Any]:
+    run_suffix = f"_{run_index}" if run_index is not None else ""
+    query_id = f"eval_{case.case_id}_{run_label}{run_suffix}"
     trace_id = None
     trace_context = None
     client = build_langfuse_client(app.config)
@@ -480,19 +543,23 @@ def run_rca_with_memory(app: RCAApp, case: GoldRCACase) -> Dict[str, Any]:
             trace_context = {"trace_id": trace_id}
         except Exception as exc:
             logger.warning("Failed to create Langfuse trace id for eval run: %s", exc)
-    config = {"configurable": {"user_id": "eval_user", "thread_id": "eval_user", "memory_enabled": True}}
+    thread_id = f"eval_user_{case.case_id}_{run_label}{run_suffix}"
+    config = {"configurable": {"user_id": "eval_user", "thread_id": thread_id, "memory_enabled": memory_enabled}}
     rca_state = {"task": case.task, "output": "", "trace": []}
     observability_config = build_langfuse_invoke_config(
         app.config,
         user_id="eval_user",
         query_id=query_id,
-        tags=build_eval_tags(app.config.langfuse_prompt_label, "with_memory"),
-        metadata=build_eval_metadata(case.case_id, app.config.langfuse_prompt_label, True),
+        tags=build_eval_tags(app.config.langfuse_prompt_label, run_label),
+        metadata=build_eval_metadata(case.case_id, app.config.langfuse_prompt_label, memory_enabled),
         trace_context=trace_context,
     )
-    logger.info("Running RCA evaluation with memory")
+    logger.info("Running RCA evaluation label=%s memory_enabled=%s", run_label, memory_enabled)
+    start = time.perf_counter()
     result = app.app.invoke(rca_state, {**config, **observability_config})
+    latency_ms = (time.perf_counter() - start) * 1000
     normalized_trace = normalize_trace(result.get("trace"))
+    tool_call_count = count_tool_calls(normalized_trace)
     return {
         "root_cause": extract_root_cause({"trace": normalized_trace}),
         "hypotheses": extract_hypotheses({"trace": normalized_trace}),
@@ -501,7 +568,60 @@ def run_rca_with_memory(app: RCAApp, case: GoldRCACase) -> Dict[str, Any]:
         "trace": normalized_trace,
         "trace_id": trace_id,
         "session_id": query_id,
+        "latency_ms": latency_ms,
+        "tool_call_count": tool_call_count,
     }
+
+
+def run_rca_with_memory(app: RCAApp, case: GoldRCACase) -> Dict[str, Any]:
+    return run_rca_eval_case(app, case, "with_memory", memory_enabled=True)
+
+
+def _root_cause_set(result: Dict[str, Any]) -> set[str]:
+    return set(_normalize_root_causes(result.get("root_cause", {})))
+
+
+def evaluate_consistency(
+    app: RCAApp,
+    gold: GoldRCACase,
+    runs: int,
+    memory_enabled: bool = False,
+) -> ConsistencyScores:
+    if runs <= 1:
+        return ConsistencyScores(correctness_variance=0.0, root_cause_agreement=1.0)
+
+    correctness_scores: List[float] = []
+    root_cause_sets: List[set[str]] = []
+    for idx in range(runs):
+        rca_output = run_rca_eval_case(
+            app,
+            gold,
+            run_label="consistency",
+            run_index=idx,
+            memory_enabled=memory_enabled,
+        )
+        score = evaluate_single_case(app, gold, rca_output)
+        correctness_scores.append(score.correctness)
+        root_cause_sets.append(_root_cause_set(rca_output))
+
+    if len(correctness_scores) < 2:
+        correctness_variance = 0.0
+    else:
+        correctness_variance = statistics.pvariance(correctness_scores)
+
+    pairwise_scores: List[float] = []
+    for i in range(len(root_cause_sets)):
+        for j in range(i + 1, len(root_cause_sets)):
+            union = root_cause_sets[i] | root_cause_sets[j]
+            intersection = root_cause_sets[i] & root_cause_sets[j]
+            score = len(intersection) / len(union) if union else 1.0
+            pairwise_scores.append(score)
+
+    root_cause_agreement = statistics.mean(pairwise_scores) if pairwise_scores else 1.0
+    return ConsistencyScores(
+        correctness_variance=correctness_variance,
+        root_cause_agreement=root_cause_agreement,
+    )
 
 
 def learning_curve(app: RCAApp, cases: List[GoldRCACase]) -> List[float]:
@@ -528,8 +648,11 @@ def learning_curve(app: RCAApp, cases: List[GoldRCACase]) -> List[float]:
             trace_context=trace_context,
         )
         rca_state = {"task": c.task, "output": "", "trace": []}
+        start = time.perf_counter()
         out = app.app.invoke(rca_state, {**config, **observability_config})
+        latency_ms = (time.perf_counter() - start) * 1000
         normalized_trace = normalize_trace(out.get("trace"))
+        tool_call_count = count_tool_calls(normalized_trace)
         score = evaluate_single_case(
             app,
             c,
@@ -539,6 +662,8 @@ def learning_curve(app: RCAApp, cases: List[GoldRCACase]) -> List[float]:
                 "validated": extract_validated({"trace": normalized_trace}),
                 "response": out.get("output", ""),
                 "trace": normalized_trace,
+                "latency_ms": latency_ms,
+                "tool_call_count": tool_call_count,
             },
         )
         correctness_scores.append(score.correctness)
