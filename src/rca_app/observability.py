@@ -130,14 +130,19 @@ def build_langfuse_invoke_config(
     tags: List[str] | None = None,
     trace_context: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
+    enriched_metadata: Dict[str, Any] = dict(metadata or {})
+    if user_id:
+        enriched_metadata.setdefault("langfuse_user_id", user_id)
+    if query_id:
+        enriched_metadata.setdefault("langfuse_session_id", query_id)
     callbacks = build_langfuse_callbacks(
         config,
         user_id=user_id,
         query_id=query_id,
-        metadata=metadata,
+        metadata=enriched_metadata,
         tags=tags,
         trace_context=trace_context,
     )
     if not callbacks:
         return {}
-    return {"callbacks": callbacks, "tags": tags or [], "metadata": metadata or {}}
+    return {"callbacks": callbacks, "tags": tags or [], "metadata": enriched_metadata}
