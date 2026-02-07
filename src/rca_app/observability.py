@@ -96,6 +96,20 @@ def build_langfuse_callbacks(
     return [CallbackHandler(**filtered_kwargs)]
 
 
+def supports_langfuse_trace_context(config: AppConfig) -> bool:
+    if not config.langfuse_enabled:
+        return False
+    if not config.langfuse_public_key or not config.langfuse_secret_key:
+        return False
+    if not importlib.util.find_spec("langfuse"):
+        return False
+    try:
+        from langfuse.langchain import CallbackHandler
+    except ModuleNotFoundError:
+        return False
+    return "trace_context" in inspect.signature(CallbackHandler).parameters
+
+
 def build_langfuse_client(config: AppConfig):
     if not config.langfuse_enabled:
         return None

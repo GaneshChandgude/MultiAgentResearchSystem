@@ -6,7 +6,11 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from .app import RCAApp
-from .observability import build_langfuse_client, build_langfuse_invoke_config
+from .observability import (
+    build_langfuse_client,
+    build_langfuse_invoke_config,
+    supports_langfuse_trace_context,
+)
 from .utils import extract_json_from_response, process_response
 
 logger = logging.getLogger(__name__)
@@ -307,7 +311,7 @@ def run_rca_with_memory(app: RCAApp, case: GoldRCACase) -> Dict[str, Any]:
     trace_id = None
     trace_context = None
     client = build_langfuse_client(app.config)
-    if client:
+    if client and supports_langfuse_trace_context(app.config):
         try:
             trace_id = client.create_trace_id()
             trace_context = {"trace_id": trace_id}
@@ -340,11 +344,12 @@ def run_rca_with_memory(app: RCAApp, case: GoldRCACase) -> Dict[str, Any]:
 def learning_curve(app: RCAApp, cases: List[GoldRCACase]) -> List[float]:
     correctness_scores = []
     client = build_langfuse_client(app.config)
+    trace_context_supported = supports_langfuse_trace_context(app.config)
     for c in cases:
         query_id = f"eval_{c.case_id}_learning_curve"
         trace_id = None
         trace_context = None
-        if client:
+        if client and trace_context_supported:
             try:
                 trace_id = client.create_trace_id()
                 trace_context = {"trace_id": trace_id}
