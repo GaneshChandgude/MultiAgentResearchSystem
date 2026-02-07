@@ -144,6 +144,72 @@ GOLD_RCA_DATASET: List[GoldRCACase] = [
         must_use_agents=["HypothesisAgent", "SalesAnalysisAgent", "HypothesisValidationAgent"],
         forbidden_root_causes=["Inventory stockout", "Warehouse delay"],
     ),
+    GoldRCACase(
+        case_id="CHANNEL_SHIFT_03",
+        task="Why did in-store sales decline while online sales surged in the same week?",
+        expected_root_causes=["Channel shift due to promo", "Store traffic decline"],
+        gold_hypotheses=[
+            "Online-only promotion drove channel shift",
+            "In-store footfall drop due to weather",
+            "Assortment gap in stores",
+            "Pricing mismatch between channels",
+        ],
+        must_use_agents=[
+            "HypothesisAgent",
+            "SalesAnalysisAgent",
+            "InventoryAnalysisAgent",
+            "HypothesisValidationAgent",
+        ],
+        forbidden_root_causes=["System outage", "Supplier delay"],
+    ),
+    GoldRCACase(
+        case_id="NEGATIVE_SALES_04",
+        task="Why did Product P120 show negative net sales for two consecutive days?",
+        expected_root_causes=["Returns spike", "Posting timing mismatch"],
+        gold_hypotheses=[
+            "Bulk returns processed",
+            "Revenue recognition delay",
+            "Inventory stockout",
+            "Pricing error",
+        ],
+        must_use_agents=[
+            "HypothesisAgent",
+            "SalesAnalysisAgent",
+            "InventoryAnalysisAgent",
+            "HypothesisValidationAgent",
+        ],
+        forbidden_root_causes=["Demand spike", "Promotion uplift"],
+    ),
+    GoldRCACase(
+        case_id="STOCKOUT_NO_SALES_05",
+        task="Why were stockouts reported for SKU K77 but sales did not increase?",
+        expected_root_causes=["Phantom inventory", "Mis-scanned shrink"],
+        gold_hypotheses=[
+            "Inventory data accuracy issue",
+            "Theft/shrink event",
+            "Supplier delay",
+            "Unexpected demand spike",
+        ],
+        must_use_agents=[
+            "HypothesisAgent",
+            "InventoryAnalysisAgent",
+            "HypothesisValidationAgent",
+        ],
+        forbidden_root_causes=["Demand spike", "Promotion uplift"],
+    ),
+    GoldRCACase(
+        case_id="PRICE_CUT_NO_LIFT_06",
+        task="Why did a price cut on Item I455 fail to lift sales in Week 32?",
+        expected_root_causes=["Assortment mismatch", "Competitive undercut"],
+        gold_hypotheses=[
+            "Competitive price lower",
+            "Out-of-stock on top variants",
+            "Low awareness of price cut",
+            "Assortment mismatch",
+        ],
+        must_use_agents=["HypothesisAgent", "SalesAnalysisAgent", "HypothesisValidationAgent"],
+        forbidden_root_causes=["Warehouse delay", "System outage"],
+    ),
 ]
 
 
