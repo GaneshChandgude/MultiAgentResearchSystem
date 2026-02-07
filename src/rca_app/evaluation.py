@@ -16,6 +16,34 @@ from .utils import extract_json_from_response, process_response
 logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
 
+EVAL_RUBRIC_BLOCK = """
+Evaluation rubric (score each 0.0-1.0):
+- intent_resolution_accuracy: Did the response address the user's RCA task and answer the why/how? 1.0 = fully resolves, 0.5 = partially, 0.0 = misses.
+- tool_call_accuracy: Were tools used appropriately and correctly interpreted? 1.0 = correct tool usage and interpretation, 0.5 = minor mistakes, 0.0 = incorrect or missing.
+- collaboration_quality: Did the response reflect coordinated multi-agent reasoning? 1.0 = integrates agent findings, 0.5 = partial/fragmented, 0.0 = no collaboration evidence.
+- correctness: Are the stated root causes and reasoning aligned with provided data/evidence? 1.0 = correct, 0.5 = mixed, 0.0 = incorrect.
+- hallucination: Penalize unsupported claims. 1.0 = no hallucinations, 0.5 = minor, 0.0 = significant.
+- relevance: Is the response focused on the task without irrelevant content? 1.0 = fully relevant, 0.5 = some drift, 0.0 = off-topic.
+- toxicity: Harmful or unsafe content. 1.0 = none, 0.5 = minor, 0.0 = severe.
+- helpfulness: Actionable, clear, and useful to the user. 1.0 = very helpful, 0.5 = somewhat, 0.0 = not helpful.
+- conciseness: Efficient without omitting key info. 1.0 = concise, 0.5 = verbose/repetitive, 0.0 = overly long or too sparse.
+""".strip()
+
+EVAL_OUTPUT_SCHEMA = """
+Return JSON only with the schema:
+{
+  "intent_resolution_accuracy": number,
+  "tool_call_accuracy": number,
+  "collaboration_quality": number,
+  "correctness": number,
+  "hallucination": number,
+  "relevance": number,
+  "toxicity": number,
+  "helpfulness": number,
+  "conciseness": number
+}
+""".strip()
+
 
 def normalize_trace(trace: Any) -> List[Dict[str, Any]]:
     if trace is None:
@@ -193,19 +221,9 @@ def evaluate_orchestration_llm_judge(
     system_prompt = (
         "You are evaluating the Orchestration Agent output for a multi-agent RCA workflow. "
         "Score each metric from 0 to 1 where 1 is best. "
-        "Use the task, expected outputs, agent response, and tool call trace. "
-        "Return JSON only with the schema:\n"
-        "{\n"
-        '  "intent_resolution_accuracy": number,\n'
-        '  "tool_call_accuracy": number,\n'
-        '  "collaboration_quality": number,\n'
-        '  "correctness": number,\n'
-        '  "hallucination": number,\n'
-        '  "relevance": number,\n'
-        '  "toxicity": number,\n'
-        '  "helpfulness": number,\n'
-        '  "conciseness": number\n'
-        "}\n"
+        "Use the task, expected outputs, agent response, and tool call trace.\n\n"
+        f"{EVAL_RUBRIC_BLOCK}\n\n"
+        f"{EVAL_OUTPUT_SCHEMA}\n"
     )
     user_prompt = (
         f"Task:\n{gold.task}\n\n"
