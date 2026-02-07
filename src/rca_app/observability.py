@@ -82,6 +82,18 @@ def build_langfuse_callbacks(
         handler_kwargs["trace_context"] = trace_context
 
     supported_params = set(inspect.signature(CallbackHandler).parameters)
+    if "update_trace" in supported_params:
+        update_trace: Dict[str, Any] = {}
+        if user_id:
+            update_trace["user_id"] = user_id
+        if query_id:
+            update_trace["session_id"] = query_id
+        if metadata:
+            update_trace["metadata"] = metadata
+        if tags:
+            update_trace["tags"] = tags
+        if update_trace:
+            handler_kwargs["update_trace"] = update_trace
     filtered_kwargs = {key: value for key, value in handler_kwargs.items() if key in supported_params}
     if filtered_kwargs.keys() != handler_kwargs.keys():
         os.environ.setdefault("LANGFUSE_PUBLIC_KEY", config.langfuse_public_key)
