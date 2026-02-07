@@ -218,6 +218,15 @@ Run only the learning-curve evaluation:
 rca-app eval --learning-curve
 ```
 
+### Evaluation references
+
+Further reading on product/LLM evaluation practices:
+
+- [Product evals](https://eugeneyan.com/writing/product-evals/)
+- [Eval process](https://eugeneyan.com/writing/eval-process/)
+- [The LLM evals field guide](https://hamel.dev/blog/posts/field-guide/)
+- [Instructions and reference data for LLM evals](https://arxiv.org/pdf/2404.12272)
+
 ### Run MCP toolset servers (SSE)
 
 Start the local MCP servers that expose Salesforce and SAP toolsets over SSE:
