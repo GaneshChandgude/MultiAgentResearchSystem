@@ -158,6 +158,9 @@ class EvalScores:
     toxicity: float
     helpfulness: float
     conciseness: float
+    required_agents_coverage: float
+    expected_root_cause_recall: float
+    forbidden_root_cause_compliance: float
 
 
 def evaluate_single_case(app: RCAApp, gold: GoldRCACase, rca_output: Dict[str, Any]) -> EvalScores:
@@ -166,6 +169,9 @@ def evaluate_single_case(app: RCAApp, gold: GoldRCACase, rca_output: Dict[str, A
         response = rca_output.get("output", "")
 
     judge_scores = evaluate_orchestration_llm_judge(app, gold, response, rca_output.get("trace"))
+    required_agents_coverage = evaluate_required_agents(gold, rca_output.get("trace"))
+    root_cause_recall = evaluate_expected_root_cause_recall(gold, rca_output)
+    forbidden_root_cause_compliance = evaluate_forbidden_root_causes(gold, rca_output)
 
     return EvalScores(
         intent_resolution_accuracy=judge_scores["intent_resolution_accuracy"],
@@ -177,6 +183,9 @@ def evaluate_single_case(app: RCAApp, gold: GoldRCACase, rca_output: Dict[str, A
         toxicity=judge_scores["toxicity"],
         helpfulness=judge_scores["helpfulness"],
         conciseness=judge_scores["conciseness"],
+        required_agents_coverage=required_agents_coverage,
+        expected_root_cause_recall=root_cause_recall,
+        forbidden_root_cause_compliance=forbidden_root_cause_compliance,
     )
 
 
@@ -192,6 +201,73 @@ def extract_validated(result: Dict[str, Any]) -> Dict[str, Any]:
         if entry["tool"] == "hypothesis_validation_agent_tool":
             return entry["output"].get("validated", {})
     return {}
+
+
+def _normalize_strings(values: Any) -> List[str]:
+    if values is None:
+        return []
+    if isinstance(values, str):
+        return [values]
+    if isinstance(values, list):
+        return [v for v in values if isinstance(v, str)]
+    if isinstance(values, dict):
+        items = []
+        for value in values.values():
+            items.extend(_normalize_strings(value))
+        return items
+    return []
+
+
+def _normalize_root_causes(root_cause: Dict[str, Any]) -> List[str]:
+    if not isinstance(root_cause, dict):
+        return []
+    candidate_keys = ["primary_root_causes", "secondary_root_causes", "contributing_factors"]
+    values: List[str] = []
+    for key in candidate_keys:
+        if key in root_cause:
+            values.extend(_normalize_strings(root_cause.get(key)))
+    if not values:
+        values = _normalize_strings(root_cause)
+    return [v.strip().lower() for v in values if v.strip()]
+
+
+def _normalize_expected_root_causes(gold: GoldRCACase) -> List[str]:
+    return [value.strip().lower() for value in gold.expected_root_causes if value.strip()]
+
+
+def _normalize_forbidden_root_causes(gold: GoldRCACase) -> List[str]:
+    return [value.strip().lower() for value in gold.forbidden_root_causes if value.strip()]
+
+
+def evaluate_required_agents(gold: GoldRCACase, trace: Any) -> float:
+    required = [agent for agent in gold.must_use_agents if agent]
+    if not required:
+        return 1.0
+    used_agents = {entry.get("agent") for entry in normalize_trace(trace) if isinstance(entry, dict)}
+    matched = sum(1 for agent in required if agent in used_agents)
+    return matched / len(required)
+
+
+def evaluate_expected_root_cause_recall(gold: GoldRCACase, rca_output: Dict[str, Any]) -> float:
+    expected = _normalize_expected_root_causes(gold)
+    if not expected:
+        return 1.0
+    predicted = _normalize_root_causes(rca_output.get("root_cause", {}))
+    if not predicted:
+        return 0.0
+    matched = sum(1 for item in expected if any(item in predicted_item for predicted_item in predicted))
+    return matched / len(expected)
+
+
+def evaluate_forbidden_root_causes(gold: GoldRCACase, rca_output: Dict[str, Any]) -> float:
+    forbidden = _normalize_forbidden_root_causes(gold)
+    if not forbidden:
+        return 1.0
+    predicted = _normalize_root_causes(rca_output.get("root_cause", {}))
+    if not predicted:
+        return 1.0
+    violations = sum(1 for item in forbidden if any(item in predicted_item for predicted_item in predicted))
+    return 0.0 if violations > 0 else 1.0
 
 
 def _coerce_score(value: Any) -> float:
@@ -311,6 +387,9 @@ def log_eval_scores(
         "toxicity": (scores.toxicity, "NUMERIC"),
         "helpfulness": (scores.helpfulness, "NUMERIC"),
         "conciseness": (scores.conciseness, "NUMERIC"),
+        "required_agents_coverage": (scores.required_agents_coverage, "NUMERIC"),
+        "expected_root_cause_recall": (scores.expected_root_cause_recall, "NUMERIC"),
+        "forbidden_root_cause_compliance": (scores.forbidden_root_cause_compliance, "NUMERIC"),
     }
     for metric, (value, data_type) in score_map.items():
         client.create_score(
