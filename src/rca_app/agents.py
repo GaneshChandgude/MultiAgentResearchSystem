@@ -10,6 +10,7 @@ from langchain.tools import tool
 from langmem import create_manage_memory_tool, create_search_memory_tool
 
 from .config import AppConfig
+from .guardrails import build_pii_middleware
 from .langfuse_prompts import PROMPT_DEFINITIONS, render_prompt
 from .llm import get_llm_model
 from .memory import build_memory_augmented_prompt, append_rca_history
@@ -28,15 +29,22 @@ from .utils import (
 logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
 
-def build_hypothesis_tool(config: AppConfig, store, checkpointer, llm):
+def build_agent_middleware(config: AppConfig, *, include_todo: bool = False):
     tool_output_guardrails = make_tool_output_guardrails(config)
+    middleware = [handle_tool_errors, *build_pii_middleware(config), tool_output_guardrails]
+    if include_todo:
+        middleware.append(TodoListMiddleware())
+    return middleware
+
+
+def build_hypothesis_tool(config: AppConfig, store, checkpointer, llm):
     hypothesis_react_agent = create_agent(
         model=llm,
         tools=[
             create_manage_memory_tool(namespace=("hypothesis", "{user_id}")),
             create_search_memory_tool(namespace=("hypothesis", "{user_id}")),
         ],
-        middleware=[handle_tool_errors, tool_output_guardrails],
+        middleware=build_agent_middleware(config),
         store=store,
         checkpointer=checkpointer,
     )
@@ -127,11 +135,10 @@ def build_sales_analysis_tool(config: AppConfig, store, checkpointer, llm, sales
         create_search_memory_tool(namespace=("sales", "{user_id}")),
     ]
 
-    tool_output_guardrails = make_tool_output_guardrails(config)
     sales_react_agent = create_agent(
         model=llm,
         tools=sales_tools,
-        middleware=[handle_tool_errors, tool_output_guardrails],
+        middleware=build_agent_middleware(config),
         store=store,
         checkpointer=checkpointer,
     )
@@ -262,11 +269,10 @@ def build_inventory_analysis_tool(
         create_search_memory_tool(namespace=("inventory", "{user_id}")),
     ]
 
-    tool_output_guardrails = make_tool_output_guardrails(config)
     inventory_react_agent = create_agent(
         model=llm,
         tools=inventory_tools,
-        middleware=[handle_tool_errors, tool_output_guardrails],
+        middleware=build_agent_middleware(config),
         store=store,
         checkpointer=checkpointer,
     )
@@ -381,14 +387,13 @@ Hypotheses to validate: {inventory_related_hypotheses}
 
 
 def build_validation_tool(config: AppConfig, store, checkpointer, llm):
-    tool_output_guardrails = make_tool_output_guardrails(config)
     validation_react_agent = create_agent(
         model=llm,
         tools=[
             create_manage_memory_tool(namespace=("hypothesis_validation", "{user_id}")),
             create_search_memory_tool(namespace=("hypothesis_validation", "{user_id}")),
         ],
-        middleware=[handle_tool_errors, tool_output_guardrails],
+        middleware=build_agent_middleware(config),
         store=store,
         checkpointer=checkpointer,
     )
@@ -499,11 +504,10 @@ Inventory insights:
 
 
 def build_root_cause_tool(config: AppConfig, store, checkpointer, llm):
-    tool_output_guardrails = make_tool_output_guardrails(config)
     root_cause_react_agent = create_agent(
         model=llm,
         tools=[],
-        middleware=[handle_tool_errors, tool_output_guardrails],
+        middleware=build_agent_middleware(config),
         store=store,
         checkpointer=checkpointer,
     )
@@ -610,11 +614,10 @@ Prior trace:
 
 
 def build_report_tool(config: AppConfig, store, checkpointer, llm):
-    tool_output_guardrails = make_tool_output_guardrails(config)
     rca_report_agent = create_agent(
         model=llm,
         tools=[],
-        middleware=[handle_tool_errors, tool_output_guardrails],
+        middleware=build_agent_middleware(config),
         store=store,
         checkpointer=checkpointer,
     )
@@ -693,11 +696,10 @@ Use the following structured RCA output:
 
 def build_router_agent(config: AppConfig, store, checkpointer, llm, tools):
     logger.info("Building router agent with %s tools", len(tools))
-    tool_output_guardrails = make_tool_output_guardrails(config)
     return create_agent(
         model=llm,
         tools=tools,
-        middleware=[handle_tool_errors, tool_output_guardrails, TodoListMiddleware()],
+        middleware=build_agent_middleware(config, include_todo=True),
         store=store,
         checkpointer=checkpointer,
     )

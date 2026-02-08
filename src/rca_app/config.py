@@ -32,6 +32,7 @@ class AppConfig:
     langfuse_prompt_label: str
     langfuse_verify_ssl: bool
     langfuse_ca_bundle: str
+    pii_middleware_enabled: bool
     pii_redaction_enabled: bool
     pii_block_input: bool
     max_input_length: int
@@ -87,6 +88,12 @@ def load_config() -> AppConfig:
         "yes",
         "on",
     }
+    pii_middleware_enabled = os.getenv("RCA_PII_MIDDLEWARE_ENABLED", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     pii_block_input = os.getenv("RCA_PII_BLOCK_INPUT", "false").strip().lower() in {
         "1",
         "true",
@@ -125,6 +132,7 @@ def load_config() -> AppConfig:
         langfuse_prompt_label=langfuse_prompt_label,
         langfuse_verify_ssl=langfuse_verify_ssl,
         langfuse_ca_bundle=langfuse_ca_bundle,
+        pii_middleware_enabled=pii_middleware_enabled,
         pii_redaction_enabled=pii_redaction_enabled,
         pii_block_input=pii_block_input,
         max_input_length=max_input_length,
