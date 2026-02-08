@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from .app import build_app, run_rca
 from .config import AppConfig, load_config, resolve_data_dir
+from .guardrails import apply_input_guardrails, apply_output_guardrails, apply_tool_output_guardrails
 from .memory import mark_memory_useful, semantic_recall
 from .memory_reflection import add_episodic_memory, add_procedural_memory, build_semantic_memory
 from .ui_store import UIStore
@@ -89,6 +90,14 @@ class LangfuseConfigRequest(BaseModel):
     langfuse_ca_bundle: str
 
 
+class GuardrailsConfigRequest(BaseModel):
+    user_id: str
+    pii_redaction_enabled: bool
+    pii_block_input: bool
+    max_input_length: int
+    max_output_length: int
+
+
 class ChatStartRequest(BaseModel):
     user_id: str
     query: str
@@ -105,6 +114,7 @@ class ConfigResponse(BaseModel):
     llm: Dict[str, Any]
     embedder: Dict[str, Any]
     langfuse: Dict[str, Any]
+    guardrails: Dict[str, Any]
 
 
 def _config_key(config: AppConfig) -> str:
@@ -121,10 +131,12 @@ def _build_user_config(user_id: str) -> AppConfig:
     llm = overrides.get("llm", {})
     embedder = overrides.get("embedder", {})
     langfuse = overrides.get("langfuse", {})
+    guardrails = overrides.get("guardrails", {})
 
     updates.update({k: v for k, v in llm.items() if v})
     updates.update({k: v for k, v in embedder.items() if v})
     updates.update(langfuse)
+    updates.update(guardrails)
 
     return replace(base_config, **updates)
 
@@ -203,8 +215,8 @@ def _run_job(job_id: str, user_id: str, query: str) -> None:
             _pending_persistence.discard(user_id)
             _persist_memories(user_id)
 
-        response = result.get("output", "")
-        trace = result.get("trace", [])
+        response = apply_output_guardrails(result.get("output", ""), config=config)
+        trace = apply_tool_output_guardrails(result.get("trace", []), config=config)
         chat_id = store.save_chat(user_id, query, response, trace)
 
         store.update_job(
@@ -284,6 +296,12 @@ async def config_defaults() -> ConfigResponse:
             "langfuse_verify_ssl": base.langfuse_verify_ssl,
             "langfuse_ca_bundle": base.langfuse_ca_bundle,
         },
+        guardrails={
+            "pii_redaction_enabled": base.pii_redaction_enabled,
+            "pii_block_input": base.pii_block_input,
+            "max_input_length": base.max_input_length,
+            "max_output_length": base.max_output_length,
+        },
     )
 
 
@@ -294,7 +312,8 @@ async def get_config(user_id: str) -> ConfigResponse:
     llm = configs.get("llm", {})
     embedder = configs.get("embedder", {})
     langfuse = configs.get("langfuse", {})
-    return ConfigResponse(llm=llm, embedder=embedder, langfuse=langfuse)
+    guardrails = configs.get("guardrails", {})
+    return ConfigResponse(llm=llm, embedder=embedder, langfuse=langfuse, guardrails=guardrails)
 
 
 @app.post("/api/config/llm")
@@ -318,13 +337,22 @@ async def set_langfuse_config(payload: LangfuseConfigRequest) -> Dict[str, str]:
     return {"status": "saved"}
 
 
+@app.post("/api/config/guardrails")
+@observe()
+async def set_guardrails_config(payload: GuardrailsConfigRequest) -> Dict[str, str]:
+    store.upsert_config(payload.user_id, "guardrails", payload.model_dump(exclude={"user_id"}))
+    return {"status": "saved"}
+
+
 @app.post("/api/chat/start")
 @observe()
 async def start_chat(payload: ChatStartRequest, background_tasks: BackgroundTasks) -> Dict[str, str]:
-    if not payload.query.strip():
-        raise HTTPException(status_code=400, detail="Query cannot be empty")
-    job_id = store.create_job(payload.user_id, payload.query)
-    background_tasks.add_task(_run_job, job_id, payload.user_id, payload.query)
+    config = _build_user_config(payload.user_id)
+    guardrail_result = apply_input_guardrails(payload.query, config=config)
+    if not guardrail_result.allowed:
+        raise HTTPException(status_code=400, detail=guardrail_result.message)
+    job_id = store.create_job(payload.user_id, guardrail_result.sanitized)
+    background_tasks.add_task(_run_job, job_id, payload.user_id, guardrail_result.sanitized)
     return {"job_id": job_id}
 
 

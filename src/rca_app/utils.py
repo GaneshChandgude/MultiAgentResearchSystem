@@ -10,6 +10,7 @@ from langchain.messages import ToolMessage
 from langchain_core.messages import AIMessage
 
 from .config import AppConfig
+from .guardrails import apply_output_guardrails, apply_value_guardrails
 from .langfuse_prompts import PROMPT_DEFINITIONS, render_prompt
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,18 @@ def handle_tool_errors(request, handler):
             content=_build_tool_error_message(e, tool_name),
             tool_call_id=request.tool_call["id"],
         )
+
+
+def make_tool_output_guardrails(config: AppConfig):
+    @wrap_tool_call
+    def handle_tool_output_guardrails(request, handler):
+        result = handler(request)
+        if isinstance(result, ToolMessage):
+            sanitized = apply_output_guardrails(str(getattr(result, "content", "")), config=config)
+            return ToolMessage(content=sanitized, tool_call_id=result.tool_call_id)
+        return apply_value_guardrails(result, config=config)
+
+    return handle_tool_output_guardrails
 
 
 def serialize_messages(msgs: List[Any]) -> List[Dict[str, Any]]:
