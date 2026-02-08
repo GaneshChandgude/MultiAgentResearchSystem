@@ -5,6 +5,8 @@ import logging
 import re
 from typing import Any, Dict, List
 
+from langchain.agents.middleware import PIIMiddleware
+
 from .config import AppConfig
 logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
@@ -37,6 +39,8 @@ _PII_PATTERNS = [
     re.compile(r"\b(?:\+?\d{1,3}[-.\s]?)?(?:\(\d{2,4}\)|\d{2,4})[-.\s]?\d{3}[-.\s]?\d{4}\b"),
     re.compile(r"\b(?:\d[ -]*?){13,16}\b"),
 ]
+
+_PII_MIDDLEWARE_TYPES = ("email", "credit_card", "ip", "mac_address", "url")
 
 @dataclass(frozen=True)
 class InputGuardrailResult:
@@ -124,3 +128,37 @@ def apply_tool_output_guardrails(
     trace: List[Dict[str, Any]], *, config: AppConfig | None = None
 ) -> List[Dict[str, Any]]:
     return [apply_value_guardrails(entry, config=config) for entry in trace]
+
+
+def build_pii_middleware(config: AppConfig) -> List[PIIMiddleware]:
+    """Build LangChain PII middleware without any LLM-based detection."""
+    if not config.pii_middleware_enabled:
+        return []
+
+    middleware: List[PIIMiddleware] = []
+
+    if config.pii_block_input:
+        middleware.extend(
+            PIIMiddleware(
+                pii_type,
+                strategy="block",
+                apply_to_input=True,
+                apply_to_output=False,
+                apply_to_tool_results=False,
+            )
+            for pii_type in _PII_MIDDLEWARE_TYPES
+        )
+
+    if config.pii_redaction_enabled:
+        middleware.extend(
+            PIIMiddleware(
+                pii_type,
+                strategy="redact",
+                apply_to_input=False,
+                apply_to_output=True,
+                apply_to_tool_results=True,
+            )
+            for pii_type in _PII_MIDDLEWARE_TYPES
+        )
+
+    return middleware

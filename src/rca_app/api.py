@@ -92,6 +92,7 @@ class LangfuseConfigRequest(BaseModel):
 
 class GuardrailsConfigRequest(BaseModel):
     user_id: str
+    pii_middleware_enabled: bool = True
     pii_redaction_enabled: bool
     pii_block_input: bool
     max_input_length: int
@@ -297,6 +298,7 @@ async def config_defaults() -> ConfigResponse:
             "langfuse_ca_bundle": base.langfuse_ca_bundle,
         },
         guardrails={
+            "pii_middleware_enabled": base.pii_middleware_enabled,
             "pii_redaction_enabled": base.pii_redaction_enabled,
             "pii_block_input": base.pii_block_input,
             "max_input_length": base.max_input_length,
