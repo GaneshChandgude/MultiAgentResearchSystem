@@ -26,13 +26,20 @@ const emptyConfig = {
     langfuse_prompt_label: "",
     langfuse_verify_ssl: true,
     langfuse_ca_bundle: ""
+  },
+  guardrails: {
+    pii_redaction_enabled: true,
+    pii_block_input: false,
+    max_input_length: 4000,
+    max_output_length: 8000
   }
 };
 
 const configSteps = [
   { key: "llm", label: "LLM Configuration" },
   { key: "embedder", label: "Embedder Setup" },
-  { key: "langfuse", label: "Langfuse Observability" }
+  { key: "langfuse", label: "Langfuse Observability" },
+  { key: "guardrails", label: "Guardrails & PII" }
 ];
 
 async function apiRequest(path, options = {}) {
@@ -121,8 +128,14 @@ function ConfigWizard({ config, setConfig, user, initialKey, onClose }) {
   const saveCurrent = async () => {
     setSaving(true);
     setError("");
+    const endpointByKey = {
+      llm: "llm",
+      embedder: "embedder",
+      langfuse: "langfuse",
+      guardrails: "guardrails"
+    };
     try {
-      await apiRequest(`/api/config/${currentKey === "llm" ? "llm" : currentKey === "embedder" ? "embedder" : "langfuse"}` , {
+      await apiRequest(`/api/config/${endpointByKey[currentKey]}`, {
         method: "POST",
         body: JSON.stringify({ user_id: user.user_id, ...config[currentKey] })
       });
@@ -301,6 +314,48 @@ function ConfigWizard({ config, setConfig, user, initialKey, onClose }) {
               <option value="yes">Enabled</option>
               <option value="no">Disabled</option>
             </select>
+          </div>
+        </div>
+      )}
+      {currentKey === "guardrails" && (
+        <div>
+          <div className="input-group">
+            <label>Enable PII redaction</label>
+            <select
+              value={config.guardrails.pii_redaction_enabled ? "yes" : "no"}
+              onChange={(event) => updateField("guardrails", "pii_redaction_enabled", event.target.value === "yes")}
+            >
+              <option value="yes">Enabled</option>
+              <option value="no">Disabled</option>
+            </select>
+          </div>
+          <div className="input-group">
+            <label>Block PII in input</label>
+            <select
+              value={config.guardrails.pii_block_input ? "yes" : "no"}
+              onChange={(event) => updateField("guardrails", "pii_block_input", event.target.value === "yes")}
+            >
+              <option value="yes">Enabled</option>
+              <option value="no">Disabled</option>
+            </select>
+          </div>
+          <div className="input-group">
+            <label>Max input length</label>
+            <input
+              type="number"
+              min="1"
+              value={config.guardrails.max_input_length}
+              onChange={(event) => updateField("guardrails", "max_input_length", Number(event.target.value))}
+            />
+          </div>
+          <div className="input-group">
+            <label>Max output length</label>
+            <input
+              type="number"
+              min="1"
+              value={config.guardrails.max_output_length}
+              onChange={(event) => updateField("guardrails", "max_output_length", Number(event.target.value))}
+            />
           </div>
         </div>
       )}
@@ -706,7 +761,8 @@ export default function App() {
         setConfig({
           llm: { ...defaults.llm, ...stored.llm },
           embedder: { ...defaults.embedder, ...stored.embedder },
-          langfuse: { ...defaults.langfuse, ...stored.langfuse }
+          langfuse: { ...defaults.langfuse, ...stored.langfuse },
+          guardrails: { ...defaults.guardrails, ...stored.guardrails }
         });
       })
       .catch(() => undefined);

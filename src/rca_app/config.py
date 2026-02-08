@@ -32,6 +32,10 @@ class AppConfig:
     langfuse_prompt_label: str
     langfuse_verify_ssl: bool
     langfuse_ca_bundle: str
+    pii_redaction_enabled: bool
+    pii_block_input: bool
+    max_input_length: int
+    max_output_length: int
 
 
 DEFAULT_AZURE_API_VERSION = "2024-12-01-preview"
@@ -77,6 +81,20 @@ def load_config() -> AppConfig:
         "on",
     }
     langfuse_ca_bundle = os.getenv("LANGFUSE_CA_BUNDLE", "").strip()
+    pii_redaction_enabled = os.getenv("RCA_PII_REDACTION_ENABLED", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    pii_block_input = os.getenv("RCA_PII_BLOCK_INPUT", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    max_input_length = int(os.getenv("RCA_MAX_INPUT_LENGTH", "4000").strip() or "4000")
+    max_output_length = int(os.getenv("RCA_MAX_OUTPUT_LENGTH", "8000").strip() or "8000")
 
     logger.debug(
         "Config resolved endpoint=%s deployment=%s data_dir=%s langfuse_enabled=%s",
@@ -107,4 +125,8 @@ def load_config() -> AppConfig:
         langfuse_prompt_label=langfuse_prompt_label,
         langfuse_verify_ssl=langfuse_verify_ssl,
         langfuse_ca_bundle=langfuse_ca_bundle,
+        pii_redaction_enabled=pii_redaction_enabled,
+        pii_block_input=pii_block_input,
+        max_input_length=max_input_length,
+        max_output_length=max_output_length,
     )
