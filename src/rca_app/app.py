@@ -101,7 +101,8 @@ def run_rca(
             "user_id": user_id,
             "thread_id": resolved_thread_id,
             "query_id": query_id,
-        }
+        },
+        "recursion_limit": app.config.recursion_limit,
     }
     observability_config = build_langfuse_invoke_config(
         app.config,

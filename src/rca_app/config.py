@@ -40,6 +40,7 @@ class AppConfig:
     model_guardrails_enabled: bool
     model_guardrails_moderation_enabled: bool
     model_guardrails_output_language: str
+    recursion_limit: int
 
 
 DEFAULT_AZURE_API_VERSION = "2024-12-01-preview"
@@ -116,6 +117,7 @@ def load_config() -> AppConfig:
         "true",
     ).strip().lower() in {"1", "true", "yes", "on"}
     model_guardrails_output_language = os.getenv("RCA_MODEL_GUARDRAILS_OUTPUT_LANGUAGE", "English").strip()
+    recursion_limit = int(os.getenv("RCA_RECURSION_LIMIT", "50").strip() or "50")
 
     logger.debug(
         "Config resolved endpoint=%s deployment=%s data_dir=%s langfuse_enabled=%s",
@@ -154,4 +156,5 @@ def load_config() -> AppConfig:
         model_guardrails_enabled=model_guardrails_enabled,
         model_guardrails_moderation_enabled=model_guardrails_moderation_enabled,
         model_guardrails_output_language=model_guardrails_output_language,
+        recursion_limit=recursion_limit,
     )

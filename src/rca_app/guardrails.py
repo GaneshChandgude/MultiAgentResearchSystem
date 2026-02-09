@@ -127,6 +127,8 @@ def apply_output_guardrails(
     *,
     config: AppConfig | None = None,
     run_model_guardrails: bool = True,
+    enforce_language: bool = True,
+    enforce_max_length: bool = True,
 ) -> str:
     redacted = response
     patterns = list(_SENSITIVE_OUTPUT_PATTERNS)
@@ -141,21 +143,28 @@ def apply_output_guardrails(
         if not model_result.allowed:
             return model_result.message
 
-    if not _is_predominantly_english(redacted):
+    if enforce_language and not _is_predominantly_english(redacted):
         logger.warning("Non-English output detected.")
         return OUTPUT_LANGUAGE_BLOCK_MESSAGE
 
-    max_output = config.max_output_length if config else MAX_OUTPUT_LENGTH
-    if len(redacted) > max_output:
-        logger.warning("Output exceeded max length; truncating.")
-        redacted = f"{redacted[:max_output]}... [truncated]"
+    if enforce_max_length:
+        max_output = config.max_output_length if config else MAX_OUTPUT_LENGTH
+        if len(redacted) > max_output:
+            logger.warning("Output exceeded max length; truncating.")
+            redacted = f"{redacted[:max_output]}... [truncated]"
 
     return redacted
 
 
 def apply_value_guardrails(value: Any, *, config: AppConfig | None = None) -> Any:
     if isinstance(value, str):
-        return apply_output_guardrails(value, config=config, run_model_guardrails=False)
+        return apply_output_guardrails(
+            value,
+            config=config,
+            run_model_guardrails=False,
+            enforce_language=False,
+            enforce_max_length=False,
+        )
     if isinstance(value, list):
         return [apply_value_guardrails(item, config=config) for item in value]
     if isinstance(value, dict):

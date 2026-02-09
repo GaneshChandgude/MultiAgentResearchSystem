@@ -104,7 +104,13 @@ def make_tool_output_guardrails(config: AppConfig):
     def handle_tool_output_guardrails(request, handler):
         result = handler(request)
         if isinstance(result, ToolMessage):
-            sanitized = apply_output_guardrails(str(getattr(result, "content", "")), config=config)
+            sanitized = apply_output_guardrails(
+                str(getattr(result, "content", "")),
+                config=config,
+                run_model_guardrails=False,
+                enforce_language=False,
+                enforce_max_length=False,
+            )
             return ToolMessage(content=sanitized, tool_call_id=result.tool_call_id)
         return apply_value_guardrails(result, config=config)
 
