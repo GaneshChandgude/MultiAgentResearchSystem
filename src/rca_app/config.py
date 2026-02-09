@@ -105,7 +105,7 @@ def load_config() -> AppConfig:
     }
     max_input_length = int(os.getenv("RCA_MAX_INPUT_LENGTH", "4000").strip() or "4000")
     max_output_length = int(os.getenv("RCA_MAX_OUTPUT_LENGTH", "8000").strip() or "8000")
-    model_guardrails_enabled = os.getenv("RCA_MODEL_GUARDRAILS_ENABLED", "false").strip().lower() in {
+    model_guardrails_enabled = os.getenv("RCA_MODEL_GUARDRAILS_ENABLED", "true").strip().lower() in {
         "1",
         "true",
         "yes",
@@ -115,7 +115,7 @@ def load_config() -> AppConfig:
         "RCA_MODEL_GUARDRAILS_MODERATION_ENABLED",
         "true",
     ).strip().lower() in {"1", "true", "yes", "on"}
-    model_guardrails_output_language = os.getenv("RCA_MODEL_GUARDRAILS_OUTPUT_LANGUAGE", "").strip()
+    model_guardrails_output_language = os.getenv("RCA_MODEL_GUARDRAILS_OUTPUT_LANGUAGE", "English").strip()
 
     logger.debug(
         "Config resolved endpoint=%s deployment=%s data_dir=%s langfuse_enabled=%s",
