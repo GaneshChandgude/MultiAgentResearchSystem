@@ -319,9 +319,9 @@ async def get_config(user_id: str) -> ConfigResponse:
     configs = store.get_config(user_id)
     llm = configs.get("llm", {})
     embedder = configs.get("embedder", {})
-    langfuse = configs.get("langfuse", {})
+    langfuse_config = configs.get("langfuse", {})
     guardrails = configs.get("guardrails", {})
-    return ConfigResponse(llm=llm, embedder=embedder, langfuse=langfuse, guardrails=guardrails)
+    return ConfigResponse(llm=llm, embedder=embedder, langfuse=langfuse_config, guardrails=guardrails)
 
 
 @app.post("/api/config/llm")
