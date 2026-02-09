@@ -97,6 +97,9 @@ class GuardrailsConfigRequest(BaseModel):
     pii_block_input: bool
     max_input_length: int
     max_output_length: int
+    model_guardrails_enabled: bool
+    model_guardrails_moderation_enabled: bool
+    model_guardrails_output_language: str
 
 
 class ChatStartRequest(BaseModel):
@@ -303,6 +306,9 @@ async def config_defaults() -> ConfigResponse:
             "pii_block_input": base.pii_block_input,
             "max_input_length": base.max_input_length,
             "max_output_length": base.max_output_length,
+            "model_guardrails_enabled": base.model_guardrails_enabled,
+            "model_guardrails_moderation_enabled": base.model_guardrails_moderation_enabled,
+            "model_guardrails_output_language": base.model_guardrails_output_language,
         },
     )
 
