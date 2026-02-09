@@ -51,8 +51,23 @@ async function apiRequest(path, options = {}) {
     ...options
   });
   if (!response.ok) {
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const payload = await response.json();
+      const detail = payload?.detail ?? payload?.message ?? payload?.error;
+      throw new Error(detail ? String(detail) : "Request failed");
+    }
     const message = await response.text();
-    throw new Error(message || "Request failed");
+    try {
+      const payload = JSON.parse(message);
+      const detail = payload?.detail ?? payload?.message ?? payload?.error;
+      throw new Error(detail ? String(detail) : "Request failed");
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        throw new Error(message || "Request failed");
+      }
+      throw err;
+    }
   }
   return response.json();
 }
@@ -690,12 +705,22 @@ function ChatScreen({ user }) {
     const query = input;
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: query, id: `user-${Date.now()}` }]);
-    const data = await apiRequest("/api/chat/start", {
-      method: "POST",
-      body: JSON.stringify({ user_id: user.user_id, query })
-    });
-    setJob(data.job_id);
-    setProgress({ status: "queued", progress: 5, message: "Queued" });
+    try {
+      const data = await apiRequest("/api/chat/start", {
+        method: "POST",
+        body: JSON.stringify({ user_id: user.user_id, query })
+      });
+      setJob(data.job_id);
+      setProgress({ status: "queued", progress: 5, message: "Queued" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Request failed";
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: `Error: ${message}`, id: `error-${Date.now()}` }
+      ]);
+      setJob(null);
+      setProgress(null);
+    }
   };
 
   const handleKeyDown = (event) => {
