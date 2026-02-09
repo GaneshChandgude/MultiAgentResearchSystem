@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from .app import build_app, run_rca
 from .config import AppConfig, load_config, resolve_data_dir
 from .guardrails import apply_input_guardrails, apply_output_guardrails, apply_tool_output_guardrails
+from .logging_utils import configure_logging
 from .memory import mark_memory_useful, semantic_recall
 from .memory_reflection import add_episodic_memory, add_procedural_memory, build_semantic_memory
 from .ui_store import UIStore
@@ -30,6 +31,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def _configure_api_logging() -> None:
+    configure_logging()
 
 _base_config = load_config()
 client = httpx.Client(verify=False)
@@ -134,12 +140,12 @@ def _build_user_config(user_id: str) -> AppConfig:
 
     llm = overrides.get("llm", {})
     embedder = overrides.get("embedder", {})
-    langfuse = overrides.get("langfuse", {})
+    langfuse_overrides = overrides.get("langfuse", {})
     guardrails = overrides.get("guardrails", {})
 
     updates.update({k: v for k, v in llm.items() if v})
     updates.update({k: v for k, v in embedder.items() if v})
-    updates.update(langfuse)
+    updates.update(langfuse_overrides)
     updates.update(guardrails)
 
     return replace(base_config, **updates)
