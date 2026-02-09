@@ -31,7 +31,10 @@ const emptyConfig = {
     pii_redaction_enabled: true,
     pii_block_input: false,
     max_input_length: 4000,
-    max_output_length: 8000
+    max_output_length: 8000,
+    model_guardrails_enabled: false,
+    model_guardrails_moderation_enabled: true,
+    model_guardrails_output_language: ""
   }
 };
 
@@ -355,6 +358,39 @@ function ConfigWizard({ config, setConfig, user, initialKey, onClose }) {
               min="1"
               value={config.guardrails.max_output_length}
               onChange={(event) => updateField("guardrails", "max_output_length", Number(event.target.value))}
+            />
+          </div>
+          <div className="input-group">
+            <label>Enable model-based guardrails</label>
+            <select
+              value={config.guardrails.model_guardrails_enabled ? "yes" : "no"}
+              onChange={(event) => updateField("guardrails", "model_guardrails_enabled", event.target.value === "yes")}
+            >
+              <option value="yes">Enabled</option>
+              <option value="no">Disabled</option>
+            </select>
+          </div>
+          <div className="input-group">
+            <label>Enable model moderation</label>
+            <select
+              value={config.guardrails.model_guardrails_moderation_enabled ? "yes" : "no"}
+              onChange={(event) =>
+                updateField("guardrails", "model_guardrails_moderation_enabled", event.target.value === "yes")
+              }
+              disabled={!config.guardrails.model_guardrails_enabled}
+            >
+              <option value="yes">Enabled</option>
+              <option value="no">Disabled</option>
+            </select>
+          </div>
+          <div className="input-group">
+            <label>Required output language</label>
+            <input
+              type="text"
+              placeholder="e.g., English"
+              value={config.guardrails.model_guardrails_output_language}
+              onChange={(event) => updateField("guardrails", "model_guardrails_output_language", event.target.value)}
+              disabled={!config.guardrails.model_guardrails_enabled}
             />
           </div>
         </div>

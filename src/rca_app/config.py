@@ -37,6 +37,9 @@ class AppConfig:
     pii_block_input: bool
     max_input_length: int
     max_output_length: int
+    model_guardrails_enabled: bool
+    model_guardrails_moderation_enabled: bool
+    model_guardrails_output_language: str
 
 
 DEFAULT_AZURE_API_VERSION = "2024-12-01-preview"
@@ -102,6 +105,17 @@ def load_config() -> AppConfig:
     }
     max_input_length = int(os.getenv("RCA_MAX_INPUT_LENGTH", "4000").strip() or "4000")
     max_output_length = int(os.getenv("RCA_MAX_OUTPUT_LENGTH", "8000").strip() or "8000")
+    model_guardrails_enabled = os.getenv("RCA_MODEL_GUARDRAILS_ENABLED", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    model_guardrails_moderation_enabled = os.getenv(
+        "RCA_MODEL_GUARDRAILS_MODERATION_ENABLED",
+        "true",
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    model_guardrails_output_language = os.getenv("RCA_MODEL_GUARDRAILS_OUTPUT_LANGUAGE", "").strip()
 
     logger.debug(
         "Config resolved endpoint=%s deployment=%s data_dir=%s langfuse_enabled=%s",
@@ -137,4 +151,7 @@ def load_config() -> AppConfig:
         pii_block_input=pii_block_input,
         max_input_length=max_input_length,
         max_output_length=max_output_length,
+        model_guardrails_enabled=model_guardrails_enabled,
+        model_guardrails_moderation_enabled=model_guardrails_moderation_enabled,
+        model_guardrails_output_language=model_guardrails_output_language,
     )

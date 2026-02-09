@@ -6,6 +6,8 @@ import re
 from typing import Any, Dict, List
 
 from langchain.agents.middleware import PIIMiddleware
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import AzureChatOpenAI
 
 from .config import AppConfig
 logger = logging.getLogger(__name__)
@@ -13,6 +15,8 @@ logger.debug("Loaded module %s", __name__)
 
 MAX_INPUT_LENGTH = 4000
 MAX_OUTPUT_LENGTH = 8000
+MODEL_GUARDRAIL_MAX_CHARS = 2000
+MODEL_GUARDRAIL_BLOCK_MESSAGE = "Response blocked by content safety policy."
 
 _PROMPT_INJECTION_PATTERNS = [
     re.compile(r"ignore\s+previous\s+instructions", re.IGNORECASE),
@@ -47,6 +51,14 @@ class InputGuardrailResult:
     allowed: bool
     message: str
     sanitized: str
+
+
+@dataclass(frozen=True)
+class ModelGuardrailResult:
+    allowed: bool
+    message: str
+    categories: List[str]
+    language: str
 
 
 def _normalize_query(query: str) -> str:
@@ -97,7 +109,12 @@ def apply_input_guardrails(query: str, *, config: AppConfig | None = None) -> In
     return InputGuardrailResult(True, "ok", sanitized)
 
 
-def apply_output_guardrails(response: str, *, config: AppConfig | None = None) -> str:
+def apply_output_guardrails(
+    response: str,
+    *,
+    config: AppConfig | None = None,
+    run_model_guardrails: bool = True,
+) -> str:
     redacted = response
     patterns = list(_SENSITIVE_OUTPUT_PATTERNS)
     if config is None or config.pii_redaction_enabled:
@@ -105,6 +122,11 @@ def apply_output_guardrails(response: str, *, config: AppConfig | None = None) -
 
     for pattern in patterns:
         redacted = pattern.sub("[REDACTED]", redacted)
+
+    if run_model_guardrails and config and config.model_guardrails_enabled:
+        model_result = apply_model_guardrails(redacted, config=config)
+        if not model_result.allowed:
+            return model_result.message
 
     max_output = config.max_output_length if config else MAX_OUTPUT_LENGTH
     if len(redacted) > max_output:
@@ -116,7 +138,7 @@ def apply_output_guardrails(response: str, *, config: AppConfig | None = None) -
 
 def apply_value_guardrails(value: Any, *, config: AppConfig | None = None) -> Any:
     if isinstance(value, str):
-        return apply_output_guardrails(value, config=config)
+        return apply_output_guardrails(value, config=config, run_model_guardrails=False)
     if isinstance(value, list):
         return [apply_value_guardrails(item, config=config) for item in value]
     if isinstance(value, dict):
@@ -128,6 +150,98 @@ def apply_tool_output_guardrails(
     trace: List[Dict[str, Any]], *, config: AppConfig | None = None
 ) -> List[Dict[str, Any]]:
     return [apply_value_guardrails(entry, config=config) for entry in trace]
+
+
+def apply_model_guardrails(response: str, *, config: AppConfig) -> ModelGuardrailResult:
+    if not config.model_guardrails_enabled:
+        return ModelGuardrailResult(True, "ok", [], "")
+
+    if not (config.azure_openai_endpoint and config.azure_openai_api_key and config.azure_openai_deployment):
+        logger.warning("Model guardrails enabled but Azure OpenAI credentials are missing.")
+        return ModelGuardrailResult(True, "ok", [], "")
+
+    moderation_enabled = config.model_guardrails_moderation_enabled
+    required_language = (config.model_guardrails_output_language or "").strip()
+    if not moderation_enabled and not required_language:
+        return ModelGuardrailResult(True, "ok", [], "")
+
+    model = _get_guardrail_model(config)
+    content = response[:MODEL_GUARDRAIL_MAX_CHARS]
+
+    import json
+
+    system_prompt = (
+        "You are a safety classifier. Return JSON only with keys: "
+        '"allowed" (boolean), "categories" (array of strings), '
+        '"language" (string), "reason" (string). '
+        "If moderation_enabled is false, ignore content moderation checks. "
+        "If required_language is set and the content is not primarily in that language, "
+        'set allowed=false and reason="language_mismatch". '
+        "If moderation is enabled and content includes unsafe material "
+        "(toxicity, hate, harassment, sexual content, violence, self-harm, illegal content, or offensive language), "
+        'set allowed=false and include the relevant categories.'
+    )
+    user_payload = {
+        "moderation_enabled": moderation_enabled,
+        "required_language": required_language,
+        "content": content,
+    }
+    try:
+        result = model.invoke(
+            [SystemMessage(content=system_prompt), HumanMessage(content=json.dumps(user_payload, ensure_ascii=False))]
+        )
+    except Exception:
+        logger.exception("Model guardrails invocation failed.")
+        return ModelGuardrailResult(True, "ok", [], "")
+
+    parsed = _parse_guardrail_response(result.content)
+    if not parsed.allowed:
+        return ModelGuardrailResult(False, MODEL_GUARDRAIL_BLOCK_MESSAGE, parsed.categories, parsed.language)
+    return parsed
+
+
+def _get_guardrail_model(config: AppConfig) -> AzureChatOpenAI:
+    cache_key = (
+        config.azure_openai_endpoint,
+        config.azure_openai_api_version,
+        config.azure_openai_deployment,
+        config.azure_openai_api_key,
+    )
+    if not hasattr(_get_guardrail_model, "_cache"):
+        _get_guardrail_model._cache = {}
+    cache = _get_guardrail_model._cache
+    if cache_key in cache:
+        return cache[cache_key]
+
+    cache[cache_key] = AzureChatOpenAI(
+        azure_endpoint=config.azure_openai_endpoint,
+        api_key=config.azure_openai_api_key,
+        api_version=config.azure_openai_api_version,
+        model=config.azure_openai_deployment,
+        azure_deployment=config.azure_openai_deployment,
+        temperature=0.0,
+        timeout=60,
+        max_retries=2,
+    )
+    return cache[cache_key]
+
+
+def _parse_guardrail_response(raw: str) -> ModelGuardrailResult:
+    import json
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("Failed to parse model guardrails response; allowing output.")
+        return ModelGuardrailResult(True, "ok", [], "")
+
+    allowed = bool(payload.get("allowed", True))
+    categories = payload.get("categories") or []
+    if not isinstance(categories, list):
+        categories = [str(categories)]
+    language = str(payload.get("language", "")).strip()
+    message = str(payload.get("reason", "ok"))
+    return ModelGuardrailResult(allowed, message, categories, language)
 
 
 def build_pii_middleware(config: AppConfig) -> List[PIIMiddleware]:
