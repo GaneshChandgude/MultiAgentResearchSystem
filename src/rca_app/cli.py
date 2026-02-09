@@ -4,11 +4,9 @@ import argparse
 import json
 from dataclasses import replace
 import logging
-import os
-from pathlib import Path
 
 from .app import build_app
-from .config import load_config, resolve_data_dir
+from .config import load_config
 from .evaluation import (
     GOLD_RCA_DATASET,
     evaluate_consistency,
@@ -20,44 +18,13 @@ from .evaluation import (
 )
 from .langfuse_datasets import build_datasets_from_gold_cases, create_dataset_items, run_dataset_experiment
 from .langfuse_prompts import sync_prompt_definitions
+from .logging_utils import configure_logging
 from .memory import mark_memory_useful, semantic_recall
 from .memory_reflection import add_episodic_memory, add_procedural_memory, build_semantic_memory
 from .observability import build_langfuse_invoke_config
 
 logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
-
-DEFAULT_LOG_FILE = "rca_app.log"
-DEFAULT_LOG_LEVEL = "INFO"
-
-
-def configure_logging() -> Path:
-    log_path = os.getenv("RCA_LOG_FILE", "").strip()
-    if log_path:
-        log_file = Path(log_path).expanduser().resolve()
-    else:
-        log_file = resolve_data_dir() / DEFAULT_LOG_FILE
-
-    log_level = os.getenv("RCA_LOG_LEVEL", DEFAULT_LOG_LEVEL).upper()
-    log_to_console = os.getenv("RCA_LOG_TO_CONSOLE", "true").strip().lower()
-    enable_console = log_to_console not in {"0", "false", "no", "off"}
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-
-    handlers: list[logging.Handler] = [logging.FileHandler(log_file)]
-    if enable_console:
-        handlers.append(logging.StreamHandler())
-
-    logging.basicConfig(
-        level=getattr(logging, log_level, logging.INFO),
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-        handlers=handlers,
-        force=True,
-    )
-
-    logging.getLogger(__name__).info(
-        "Logging initialized at %s (level=%s)", log_file, log_level
-    )
-    return log_file
 
 
 def run_chat():
@@ -99,7 +66,10 @@ def run_chat():
             print("\nExiting RCA chatbot.")
             break
 
-        config_dict = {"configurable": {"user_id": user_id, "thread_id": user_id}}
+        config_dict = {
+            "configurable": {"user_id": user_id, "thread_id": user_id},
+            "recursion_limit": app.config.recursion_limit,
+        }
         observability_config = build_langfuse_invoke_config(
             app.config,
             user_id=user_id,
