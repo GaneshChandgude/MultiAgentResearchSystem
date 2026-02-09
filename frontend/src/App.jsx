@@ -32,9 +32,9 @@ const emptyConfig = {
     pii_block_input: false,
     max_input_length: 4000,
     max_output_length: 8000,
-    model_guardrails_enabled: false,
+    model_guardrails_enabled: true,
     model_guardrails_moderation_enabled: true,
-    model_guardrails_output_language: ""
+    model_guardrails_output_language: "English"
   }
 };
 
