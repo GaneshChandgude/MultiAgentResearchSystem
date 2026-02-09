@@ -17,6 +17,8 @@ MAX_INPUT_LENGTH = 4000
 MAX_OUTPUT_LENGTH = 8000
 MODEL_GUARDRAIL_MAX_CHARS = 2000
 MODEL_GUARDRAIL_BLOCK_MESSAGE = "Response blocked by content safety policy."
+INPUT_LANGUAGE_BLOCK_MESSAGE = "Query must be in English."
+OUTPUT_LANGUAGE_BLOCK_MESSAGE = "Response must be in English."
 
 _PROMPT_INJECTION_PATTERNS = [
     re.compile(r"ignore\s+previous\s+instructions", re.IGNORECASE),
@@ -64,6 +66,13 @@ class ModelGuardrailResult:
 def _normalize_query(query: str) -> str:
     return re.sub(r"\s+", " ", query.strip())
 
+def _is_predominantly_english(text: str, *, threshold: float = 0.7) -> bool:
+    letters = [char for char in text if char.isalpha()]
+    if not letters:
+        return True
+    english_letters = sum(1 for char in letters if "A" <= char <= "Z" or "a" <= char <= "z")
+    return (english_letters / len(letters)) >= threshold
+
 
 def apply_input_guardrails(query: str, *, config: AppConfig | None = None) -> InputGuardrailResult:
     sanitized = _normalize_query(query)
@@ -106,6 +115,10 @@ def apply_input_guardrails(query: str, *, config: AppConfig | None = None) -> In
                     sanitized,
                 )
 
+    if not _is_predominantly_english(sanitized):
+        logger.warning("Non-English input detected.")
+        return InputGuardrailResult(False, INPUT_LANGUAGE_BLOCK_MESSAGE, sanitized)
+
     return InputGuardrailResult(True, "ok", sanitized)
 
 
@@ -127,6 +140,10 @@ def apply_output_guardrails(
         model_result = apply_model_guardrails(redacted, config=config)
         if not model_result.allowed:
             return model_result.message
+
+    if not _is_predominantly_english(redacted):
+        logger.warning("Non-English output detected.")
+        return OUTPUT_LANGUAGE_BLOCK_MESSAGE
 
     max_output = config.max_output_length if config else MAX_OUTPUT_LENGTH
     if len(redacted) > max_output:
