@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import logging
 from dataclasses import asdict, replace
@@ -20,6 +21,7 @@ from .logging_utils import configure_logging
 from .memory import mark_memory_useful, semantic_recall
 from .memory_reflection import add_episodic_memory, add_procedural_memory, build_semantic_memory
 from .ui_store import UIStore
+from .utils import register_todo_progress_sink
 
 logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
@@ -48,6 +50,13 @@ langfuse = Langfuse(
 langfuse_handler = CallbackHandler()
 
 store = UIStore(resolve_data_dir() / "rca_ui.db")
+register_todo_progress_sink(
+    lambda job_id, todos, todo_progress: store.update_job_todo_snapshot(
+        job_id,
+        todos=todos,
+        todo_progress=todo_progress,
+    )
+)
 _app_cache: Dict[str, Any] = {}
 _session_cache: Dict[str, Dict[str, Any]] = {}
 _pending_persistence: set[str] = set()
@@ -240,6 +249,8 @@ def _run_job(job_id: str, user_id: str, query: str) -> None:
                 "chat_id": chat_id,
                 "response": response,
                 "trace": trace,
+                "todos": result.get("todos", []),
+                "todo_progress": result.get("todo_progress", {}),
             },
         )
     except Exception as exc:
@@ -256,6 +267,30 @@ def _run_job(job_id: str, user_id: str, query: str) -> None:
             message=str(exc),
             result={"error": str(exc)},
         )
+
+
+def _extract_todos_from_tool_content(content: Any) -> list[Dict[str, Any]]:
+    if not isinstance(content, str):
+        return []
+    text = content.strip()
+    if not text:
+        return []
+
+    candidates = [text]
+    marker = "Updated todo list to"
+    if marker in text:
+        candidates.insert(0, text.split(marker, 1)[1].strip())
+
+    for candidate in candidates:
+        try:
+            parsed = ast.literal_eval(candidate)
+        except (ValueError, SyntaxError):
+            continue
+        if isinstance(parsed, list):
+            return [item for item in parsed if isinstance(item, dict)]
+
+    return []
+
 
 
 def _normalize_todo_steps(todos: list[Dict[str, Any]]) -> Dict[str, Any] | None:
@@ -308,6 +343,57 @@ def _normalize_todo_steps(todos: list[Dict[str, Any]]) -> Dict[str, Any] | None:
     }
 
 
+def _extract_latest_todos_from_messages(messages: Any) -> list[Dict[str, Any]]:
+    if not isinstance(messages, list):
+        return []
+
+    latest_todos: list[Dict[str, Any]] = []
+    write_todo_call_ids: set[str] = set()
+
+    for message in messages:
+        if isinstance(message, dict):
+            message_type = message.get("type")
+            if message_type == "AIMessage":
+                for call in message.get("tool_calls") or []:
+                    if not isinstance(call, dict) or call.get("name") != "write_todos":
+                        continue
+                    call_id = call.get("id")
+                    if isinstance(call_id, str) and call_id:
+                        write_todo_call_ids.add(call_id)
+                    todos = call.get("args", {}).get("todos")
+                    if isinstance(todos, list):
+                        latest_todos = [todo for todo in todos if isinstance(todo, dict)]
+            elif message_type == "ToolMessage":
+                tool_call_id = message.get("tool_call_id")
+                if write_todo_call_ids and tool_call_id not in write_todo_call_ids:
+                    continue
+                todos = _extract_todos_from_tool_content(message.get("content"))
+                if todos:
+                    latest_todos = todos
+            continue
+
+        tool_calls = getattr(message, "tool_calls", None) or []
+        for call in tool_calls:
+            if not isinstance(call, dict) or call.get("name") != "write_todos":
+                continue
+            call_id = call.get("id")
+            if isinstance(call_id, str) and call_id:
+                write_todo_call_ids.add(call_id)
+            todos = call.get("args", {}).get("todos")
+            if isinstance(todos, list):
+                latest_todos = [todo for todo in todos if isinstance(todo, dict)]
+
+        tool_call_id = getattr(message, "tool_call_id", None)
+        if tool_call_id is not None:
+            if write_todo_call_ids and tool_call_id not in write_todo_call_ids:
+                continue
+            todos = _extract_todos_from_tool_content(getattr(message, "content", ""))
+            if todos:
+                latest_todos = todos
+
+    return latest_todos
+
+
 def _build_todo_plan_from_checkpoint(job: Dict[str, Any]) -> Dict[str, Any] | None:
     user_id = str(job.get("user_id") or "")
     if not user_id:
@@ -326,23 +412,57 @@ def _build_todo_plan_from_checkpoint(job: Dict[str, Any]) -> Dict[str, Any] | No
         return None
 
     channel_values = checkpoint_tuple.checkpoint.get("channel_values", {})
-    query_id = channel_values.get("query_id")
-    if isinstance(query_id, str) and query_id and query_id != str(job.get("id")):
-        return None
-
     raw_todos = channel_values.get("todos")
     raw_todo_progress = channel_values.get("todo_progress")
-    if not isinstance(raw_todos, list):
+    if isinstance(raw_todos, list):
+        todo_plan = _normalize_todo_steps([todo for todo in raw_todos if isinstance(todo, dict)])
+        if todo_plan:
+            if isinstance(raw_todo_progress, dict):
+                todo_plan["progress"] = {
+                    **todo_plan.get("progress", {}),
+                    **raw_todo_progress,
+                }
+            return todo_plan
+
+    history = channel_values.get("history")
+    todos = _extract_latest_todos_from_messages(history)
+    return _normalize_todo_steps(todos)
+
+
+def _build_todo_plan_from_trace(trace: Any) -> Dict[str, Any] | None:
+    if not isinstance(trace, list) or not trace:
         return None
 
-    todo_plan = _normalize_todo_steps([todo for todo in raw_todos if isinstance(todo, dict)])
+    latest_todos: list[Dict[str, Any]] = []
+    for entry in trace:
+        if not isinstance(entry, dict):
+            continue
+        messages = entry.get("tool_calls") or entry.get("calls") or []
+        todos = _extract_latest_todos_from_messages(messages)
+        if todos:
+            latest_todos = todos
+
+    return _normalize_todo_steps(latest_todos)
+
+
+def _build_todo_plan_from_result(job: Dict[str, Any]) -> Dict[str, Any] | None:
+    result = job.get("result")
+    if not isinstance(result, dict):
+        return None
+
+    todos = result.get("todos")
+    if not isinstance(todos, list):
+        return None
+
+    todo_plan = _normalize_todo_steps([todo for todo in todos if isinstance(todo, dict)])
     if not todo_plan:
         return None
 
-    if isinstance(raw_todo_progress, dict):
+    persisted_progress = result.get("todo_progress")
+    if isinstance(persisted_progress, dict):
         todo_plan["progress"] = {
             **todo_plan.get("progress", {}),
-            **raw_todo_progress,
+            **persisted_progress,
         }
 
     return todo_plan
@@ -555,7 +675,12 @@ async def chat_status(job_id: str) -> Dict[str, Any]:
     try:
         job = store.get_job(job_id)
         job["plan"] = _build_progress_plan(job)
-        todo_plan = _build_todo_plan_from_checkpoint(job)
+        trace = (job.get("result") or {}).get("trace")
+        todo_plan = _build_todo_plan_from_result(job)
+        if not todo_plan:
+            todo_plan = _build_todo_plan_from_trace(trace)
+        if not todo_plan and job.get("status") in {"queued", "running"}:
+            todo_plan = _build_todo_plan_from_checkpoint(job)
         if todo_plan:
             job["todo_plan"] = todo_plan
         return job
