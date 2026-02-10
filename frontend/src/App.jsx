@@ -7,6 +7,8 @@ const emptyConfig = {
     azure_openai_endpoint: "",
     azure_openai_api_key: "",
     azure_openai_deployment: "",
+    planning_azure_openai_deployment: "",
+    specialist_azure_openai_deployment: "",
     azure_openai_api_version: ""
   },
   embedder: {
@@ -202,11 +204,31 @@ function ConfigWizard({ config, setConfig, user, initialKey, onClose }) {
             />
           </div>
           <div className="input-group">
-            <label>Deployment Name</label>
+            <label>Default Deployment Name</label>
             <input
               value={config.llm.azure_openai_deployment}
               onChange={(event) => updateField("llm", "azure_openai_deployment", event.target.value)}
               placeholder="deployment"
+            />
+          </div>
+          <div className="input-group">
+            <label>Planning Deployment (Planner/Router/Orchestrator)</label>
+            <input
+              value={config.llm.planning_azure_openai_deployment}
+              onChange={(event) =>
+                updateField("llm", "planning_azure_openai_deployment", event.target.value)
+              }
+              placeholder="e.g. gpt-4.1"
+            />
+          </div>
+          <div className="input-group">
+            <label>Specialist Deployment (Sub Agents)</label>
+            <input
+              value={config.llm.specialist_azure_openai_deployment}
+              onChange={(event) =>
+                updateField("llm", "specialist_azure_openai_deployment", event.target.value)
+              }
+              placeholder="e.g. gpt-4.1-mini"
             />
           </div>
           <div className="input-group">

@@ -80,6 +80,8 @@ class LLMConfigRequest(BaseModel):
     azure_openai_endpoint: str
     azure_openai_api_key: str
     azure_openai_deployment: str
+    planning_azure_openai_deployment: str
+    specialist_azure_openai_deployment: str
     azure_openai_api_version: str
 
 
@@ -583,6 +585,8 @@ async def config_defaults() -> ConfigResponse:
             "azure_openai_endpoint": base.azure_openai_endpoint,
             "azure_openai_api_key": "",
             "azure_openai_deployment": base.azure_openai_deployment,
+            "planning_azure_openai_deployment": base.planning_azure_openai_deployment,
+            "specialist_azure_openai_deployment": base.specialist_azure_openai_deployment,
             "azure_openai_api_version": base.azure_openai_api_version,
         },
         embedder={
