@@ -77,10 +77,10 @@ deep-research agent, not a fixed pipeline.
 
 ---
 Dynamic Input:
-- Task: {task}
 - User Id: {user_id}
 - Query Id: {query_id}
 - Memory Context(memory_context): '''{memory_context}'''
+- Task: {task}
 """.strip()
 
 HYPOTHESIS_AGENT_PROMPT = """
