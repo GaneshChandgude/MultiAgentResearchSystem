@@ -55,8 +55,7 @@ def build_hypothesis_tool(config: AppConfig, store, checkpointer, llm):
         ],
         middleware=build_agent_middleware(
             config,
-            include_pii=config.nested_agent_pii_profile != "off",
-            pii_profile=("nested" if config.nested_agent_pii_profile == "nested" else "full"),
+            include_pii=False,
         ),
         store=store,
         checkpointer=checkpointer,
@@ -153,8 +152,7 @@ def build_sales_analysis_tool(config: AppConfig, store, checkpointer, llm, sales
         tools=sales_tools,
         middleware=build_agent_middleware(
             config,
-            include_pii=config.nested_agent_pii_profile != "off",
-            pii_profile=("nested" if config.nested_agent_pii_profile == "nested" else "full"),
+            include_pii=False,
         ),
         store=store,
         checkpointer=checkpointer,
@@ -291,8 +289,7 @@ def build_inventory_analysis_tool(
         tools=inventory_tools,
         middleware=build_agent_middleware(
             config,
-            include_pii=config.nested_agent_pii_profile != "off",
-            pii_profile=("nested" if config.nested_agent_pii_profile == "nested" else "full"),
+            include_pii=False,
         ),
         store=store,
         checkpointer=checkpointer,
@@ -416,8 +413,7 @@ def build_validation_tool(config: AppConfig, store, checkpointer, llm):
         ],
         middleware=build_agent_middleware(
             config,
-            include_pii=config.nested_agent_pii_profile != "off",
-            pii_profile=("nested" if config.nested_agent_pii_profile == "nested" else "full"),
+            include_pii=False,
         ),
         store=store,
         checkpointer=checkpointer,
@@ -534,8 +530,7 @@ def build_root_cause_tool(config: AppConfig, store, checkpointer, llm):
         tools=[],
         middleware=build_agent_middleware(
             config,
-            include_pii=config.nested_agent_pii_profile != "off",
-            pii_profile=("nested" if config.nested_agent_pii_profile == "nested" else "full"),
+            include_pii=False,
         ),
         store=store,
         checkpointer=checkpointer,
@@ -648,8 +643,7 @@ def build_report_tool(config: AppConfig, store, checkpointer, llm):
         tools=[],
         middleware=build_agent_middleware(
             config,
-            include_pii=config.nested_agent_pii_profile != "off",
-            pii_profile=("nested" if config.nested_agent_pii_profile == "nested" else "full"),
+            include_pii=False,
         ),
         store=store,
         checkpointer=checkpointer,
