@@ -58,7 +58,9 @@ class ScopedPIIMiddleware(PIIMiddleware):
 
     @property
     def name(self) -> str:
-        return f"{super().name}:{self._scope}"
+        # LangGraph reserves ":" in node names, and middleware names are used as
+        # graph node identifiers when creating agents.
+        return f"{super().name}_{self._scope}".replace(":", "_")
 
 @dataclass(frozen=True)
 class InputGuardrailResult:
