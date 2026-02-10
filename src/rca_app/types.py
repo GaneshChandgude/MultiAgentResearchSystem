@@ -12,6 +12,8 @@ class RCAState(TypedDict):
     output: str
     trace: List[Dict[str, Any]]
     history: NotRequired[List[Any]]
+    todos: NotRequired[List[Dict[str, Any]]]
+    todo_progress: NotRequired[Dict[str, Any]]
 
 
 logger.debug("RCAState typing loaded")
