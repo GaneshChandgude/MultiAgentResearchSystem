@@ -138,7 +138,7 @@ def load_config() -> AppConfig:
         "true",
     ).strip().lower() in {"1", "true", "yes", "on"}
     model_guardrails_output_language = os.getenv("RCA_MODEL_GUARDRAILS_OUTPUT_LANGUAGE", "English").strip()
-    recursion_limit = int(os.getenv("RCA_RECURSION_LIMIT", "25").strip() or "25")
+    recursion_limit = int(os.getenv("RCA_RECURSION_LIMIT", "50").strip() or "50")
 
     logger.debug(
         "Config resolved endpoint=%s deployment=%s data_dir=%s langfuse_enabled=%s",
