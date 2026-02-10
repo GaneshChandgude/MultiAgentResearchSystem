@@ -321,3 +321,24 @@ Memory tools used:
 - Centralized memory, not centralized logic
 - Evidence-driven convergence, not rule-based flows
 - Explainability by design
+
+## How TODO progress works (API + UI)
+
+TODO progress is persisted by **LangGraph checkpoints** (through `checkpointer`) when
+`TodoListMiddleware` writes todos into graph state.
+
+### What is automatic
+
+- `TodoListMiddleware` updates graph state with `todos`.
+- The configured checkpointer persists state by `thread_id`.
+- The API can read latest checkpoint state and expose it as `todo_plan`.
+
+### What this app does now
+
+- `/api/chat/status/{job_id}` builds `todo_plan` directly from checkpoint state.
+- We no longer manually persist todo snapshots into the UI jobs table.
+- Execution progress (`status`, `progress`, `message`) is still stored in jobs and shown
+  as the coarse execution plan.
+
+This keeps TODO progress sourcing simple: **LangChain/LangGraph state + checkpointer**.
+

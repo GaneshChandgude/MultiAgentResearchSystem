@@ -177,42 +177,6 @@ class UIStore:
                 (status, progress, message, result_json, now, job_id),
             )
 
-    def update_job_todo_snapshot(
-        self,
-        job_id: str,
-        *,
-        todos: List[Dict[str, Any]],
-        todo_progress: Dict[str, Any],
-    ) -> None:
-        row = self._conn.execute(
-            "SELECT result FROM jobs WHERE id = ?",
-            (job_id,),
-        ).fetchone()
-        if not row:
-            return
-
-        existing_result: Dict[str, Any] = {}
-        if row[0]:
-            try:
-                loaded = json.loads(row[0])
-                if isinstance(loaded, dict):
-                    existing_result = loaded
-            except (TypeError, json.JSONDecodeError):
-                existing_result = {}
-
-        existing_result["todos"] = todos
-        existing_result["todo_progress"] = todo_progress
-
-        with self._conn:
-            self._conn.execute(
-                """
-                UPDATE jobs
-                SET result = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (json.dumps(existing_result), self._now(), job_id),
-            )
-
     def get_job(self, job_id: str) -> Dict[str, Any]:
         cursor = self._conn.execute(
             """

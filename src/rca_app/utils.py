@@ -3,12 +3,11 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Callable, Dict, List
+from typing import Any, Dict, List
 
 from langchain.agents.middleware import wrap_tool_call
 from langchain.messages import ToolMessage
 from langchain_core.messages import AIMessage
-from langgraph.types import Command
 
 from .config import AppConfig
 from .guardrails import apply_output_guardrails, apply_value_guardrails
@@ -16,16 +15,6 @@ from .langfuse_prompts import PROMPT_DEFINITIONS, render_prompt
 
 logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
-
-_todo_progress_sink: Callable[[str, List[Dict[str, Any]], Dict[str, Any]], None] | None = None
-
-
-def register_todo_progress_sink(
-    sink: Callable[[str, List[Dict[str, Any]], Dict[str, Any]], None] | None,
-) -> None:
-    global _todo_progress_sink
-    _todo_progress_sink = sink
-
 
 def extract_json_from_response(response_text: str) -> str:
     match = re.search(r"```json\s*\n([\s\S]*?)\n```", response_text)
@@ -110,91 +99,6 @@ def handle_tool_errors(request, handler):
 
 
 
-
-def _extract_todos_from_tool_call(request: Any, result: Any) -> List[Dict[str, Any]]:
-    tool_call = request.tool_call if isinstance(request.tool_call, dict) else {}
-    args = tool_call.get("args", {})
-    raw_todos = args.get("todos") if isinstance(args, dict) else None
-
-    if not isinstance(raw_todos, list) and isinstance(result, Command) and isinstance(result.update, dict):
-        command_todos = result.update.get("todos")
-        if isinstance(command_todos, list):
-            raw_todos = command_todos
-
-    if not isinstance(raw_todos, list):
-        return []
-
-    return [todo for todo in raw_todos if isinstance(todo, dict)]
-
-
-def _build_todo_progress(todos: List[Dict[str, Any]]) -> Dict[str, Any]:
-    total = len(todos)
-    completed = 0
-    in_progress = 0
-
-    for todo in todos:
-        status = str(todo.get("status", "pending")).strip().lower()
-        if status == "completed":
-            completed += 1
-        elif status == "in_progress":
-            in_progress += 1
-
-    percent = int((completed / total) * 100) if total else 0
-    return {
-        "total": total,
-        "completed": completed,
-        "in_progress": in_progress,
-        "pending": max(total - completed - in_progress, 0),
-        "percent": percent,
-        "source": "write_todos",
-    }
-
-
-def _extract_query_id(request: Any) -> str | None:
-    runtime = getattr(request, "runtime", None)
-    runtime_config = getattr(runtime, "config", None)
-    runtime_configurable = None
-    if isinstance(runtime_config, dict):
-        runtime_configurable = runtime_config.get("configurable")
-    else:
-        runtime_configurable = getattr(runtime_config, "configurable", None)
-
-    query_id = None
-    if isinstance(runtime_configurable, dict):
-        query_id = runtime_configurable.get("query_id")
-    else:
-        query_id = getattr(runtime_configurable, "query_id", None)
-
-    if isinstance(query_id, str) and query_id.strip():
-        return query_id.strip()
-
-    return None
-
-
-@wrap_tool_call
-def sync_todo_progress(request, handler):
-    result = handler(request)
-
-    tool_name = request.tool_call.get("name") if isinstance(request.tool_call, dict) else None
-    if tool_name != "write_todos":
-        return result
-
-    todos = _extract_todos_from_tool_call(request, result)
-    if not todos or not isinstance(request.state, dict):
-        return result
-
-    todo_progress = _build_todo_progress(todos)
-    request.state["todos"] = todos
-    request.state["todo_progress"] = todo_progress
-
-    query_id = _extract_query_id(request)
-    if _todo_progress_sink and query_id:
-        try:
-            _todo_progress_sink(query_id, todos, todo_progress)
-        except Exception:
-            logger.exception("Failed to persist todo progress for query_id=%s", query_id)
-
-    return result
 
 def make_tool_output_guardrails(config: AppConfig):
     @wrap_tool_call
