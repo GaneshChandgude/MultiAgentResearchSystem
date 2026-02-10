@@ -12,7 +12,7 @@ from langmem import create_manage_memory_tool, create_search_memory_tool
 from .config import AppConfig
 from .guardrails import build_pii_middleware
 from .langfuse_prompts import PROMPT_DEFINITIONS, render_prompt
-from .llm import get_llm_model
+from .llm import get_planning_llm_model, get_specialist_llm_model
 from .memory import build_memory_augmented_prompt, append_rca_history
 from .observability import build_langfuse_invoke_config
 from .toolset_registry import ToolsetRegistry
@@ -44,7 +44,18 @@ def build_agent_middleware(
     middleware.append(tool_output_guardrails)
     if include_todo:
         middleware.append(sync_todo_progress)
-        middleware.append(TodoListMiddleware())
+        middleware.append(
+            TodoListMiddleware(
+                system_prompt="""CRITICAL RULES FOR write_todos:
+1. Initial plan → Create full list with 'pending'.
+2. After ANY tool → UPDATE EXISTING todos ONLY: change status to 'completed'/'in_progress', NO new tasks unless essential.
+3. READ current todos from state before updating.
+4. If all 'completed' → FINAL ANSWER ONLY, no more write_todos.
+5. Match tasks exactly by description, update status.
+UPDATE RULE: After tools, call write_todos to set EXACT matching task to 'completed'.
+            NO new lists. If all completed, END."""
+            )
+        )
     return middleware
 
 
@@ -831,24 +842,32 @@ def orchestration_agent(
 
 def build_agents(config: AppConfig, store, checkpointer):
     logger.info("Initializing RCA agents")
-    llm = get_llm_model(config)
-    hypothesis_tool = build_hypothesis_tool(config, store, checkpointer, llm)
+    planning_llm = get_planning_llm_model(config)
+    specialist_llm = get_specialist_llm_model(config)
+    hypothesis_tool = build_hypothesis_tool(config, store, checkpointer, specialist_llm)
     salesforce_toolset = build_salesforce_toolset(config)
     sap_toolset = build_sap_business_one_toolset(config)
     tool_registry = ToolsetRegistry([salesforce_toolset, sap_toolset])
     sales_tool, sales_tools = build_sales_analysis_tool(
-        config, store, checkpointer, llm, salesforce_toolset.tools
+        config, store, checkpointer, specialist_llm, salesforce_toolset.tools
     )
     try:
         promo_tool = tool_registry.find_tool("get_promo_period")
     except KeyError:
         promo_tool = None
     inventory_tool = build_inventory_analysis_tool(
-        config, store, checkpointer, llm, sap_toolset.tools, promo_tool
+        config, store, checkpointer, specialist_llm, sap_toolset.tools, promo_tool
     )
-    validation_tool = build_validation_tool(config, store, checkpointer, llm)
-    root_cause_tool = build_root_cause_tool(config, store, checkpointer, llm)
-    report_tool = build_report_tool(config, store, checkpointer, llm)
+    validation_tool = build_validation_tool(config, store, checkpointer, specialist_llm)
+    root_cause_tool = build_root_cause_tool(config, store, checkpointer, specialist_llm)
+    report_tool = build_report_tool(config, store, checkpointer, specialist_llm)
+
+
+
+    @tool
+    def force_todo_update(reason: str) -> str:
+        """Call after tools to update todos."""
+        return f"force_todo_update triggered: {reason}"
 
     router_tools = [
         create_search_memory_tool(namespace=("orchestration", "{user_id}")),
@@ -859,12 +878,15 @@ def build_agents(config: AppConfig, store, checkpointer):
         validation_tool,
         root_cause_tool,
         report_tool,
+        force_todo_update,
     ]
 
-    router_agent = build_router_agent(config, store, checkpointer, llm, router_tools)
+    router_agent = build_router_agent(config, store, checkpointer, planning_llm, router_tools)
 
     return {
-        "llm": llm,
+        "llm": planning_llm,
+        "planning_llm": planning_llm,
+        "specialist_llm": specialist_llm,
         "router_agent": router_agent,
         "tools": {
             "hypothesis": hypothesis_tool,

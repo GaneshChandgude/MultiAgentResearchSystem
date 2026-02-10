@@ -10,13 +10,13 @@ logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
 
 
-def get_llm_model(config: AppConfig) -> AzureChatOpenAI:
-    if not (config.azure_openai_endpoint and config.azure_openai_api_key and config.azure_openai_deployment):
+def _build_azure_chat_model(config: AppConfig, deployment: str) -> AzureChatOpenAI:
+    if not (config.azure_openai_endpoint and config.azure_openai_api_key and deployment):
         raise ValueError("Azure OpenAI endpoint, api key, and deployment must be set.")
 
     logger.debug(
         "Initializing AzureChatOpenAI deployment=%s endpoint=%s api_version=%s",
-        config.azure_openai_deployment,
+        deployment,
         config.azure_openai_endpoint,
         config.azure_openai_api_version,
     )
@@ -28,13 +28,25 @@ def get_llm_model(config: AppConfig) -> AzureChatOpenAI:
         azure_endpoint=config.azure_openai_endpoint,
         api_key=config.azure_openai_api_key,
         api_version=config.azure_openai_api_version,
-        model=config.azure_openai_deployment,
-        azure_deployment=config.azure_openai_deployment,
+        model=deployment,
+        azure_deployment=deployment,
         temperature=0.7,
         timeout=300,
         max_retries=3,
         callbacks=callbacks or None,
     )
+
+
+def get_llm_model(config: AppConfig) -> AzureChatOpenAI:
+    return _build_azure_chat_model(config, config.azure_openai_deployment)
+
+
+def get_planning_llm_model(config: AppConfig) -> AzureChatOpenAI:
+    return _build_azure_chat_model(config, config.planning_azure_openai_deployment)
+
+
+def get_specialist_llm_model(config: AppConfig) -> AzureChatOpenAI:
+    return _build_azure_chat_model(config, config.specialist_azure_openai_deployment)
 
 
 def get_embeddings(config: AppConfig) -> AzureOpenAIEmbeddings:

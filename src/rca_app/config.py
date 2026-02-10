@@ -15,6 +15,8 @@ class AppConfig:
     azure_openai_endpoint: str
     azure_openai_api_key: str
     azure_openai_deployment: str
+    planning_azure_openai_deployment: str
+    specialist_azure_openai_deployment: str
     azure_openai_api_version: str
     embeddings_model: str
     embeddings_endpoint: str
@@ -65,6 +67,8 @@ def load_config() -> AppConfig:
     endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip()
     api_key = os.getenv("AZURE_OPENAI_API_KEY", "").strip()
     deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "").strip()
+    planning_deployment = os.getenv("AZURE_OPENAI_PLANNING_DEPLOYMENT", "").strip() or deployment
+    specialist_deployment = os.getenv("AZURE_OPENAI_SPECIALIST_DEPLOYMENT", "").strip() or deployment
 
     embeddings_endpoint = os.getenv("AZURE_OPENAI_EMBEDDINGS_ENDPOINT", endpoint).strip()
     embeddings_api_key = os.getenv("AZURE_OPENAI_EMBEDDINGS_API_KEY", api_key).strip()
@@ -147,6 +151,8 @@ def load_config() -> AppConfig:
         azure_openai_endpoint=endpoint,
         azure_openai_api_key=api_key,
         azure_openai_deployment=deployment,
+        planning_azure_openai_deployment=planning_deployment,
+        specialist_azure_openai_deployment=specialist_deployment,
         azure_openai_api_version=os.getenv("AZURE_OPENAI_API_VERSION", DEFAULT_AZURE_API_VERSION),
         embeddings_model=os.getenv("AZURE_OPENAI_EMBEDDINGS_MODEL", DEFAULT_EMBEDDINGS_MODEL),
         embeddings_endpoint=embeddings_endpoint,
