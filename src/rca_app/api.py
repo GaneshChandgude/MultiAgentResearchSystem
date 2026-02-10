@@ -239,10 +239,15 @@ def _run_job(job_id: str, user_id: str, query: str) -> None:
         )
     except Exception as exc:
         logger.exception("RCA job failed")
+        failed_progress = 0
+        try:
+            failed_progress = int(store.get_job(job_id).get("progress", 0))
+        except KeyError:
+            failed_progress = 0
         store.update_job(
             job_id,
             status="failed",
-            progress=100,
+            progress=failed_progress,
             message=str(exc),
             result={"error": str(exc)},
         )
@@ -271,54 +276,15 @@ def _extract_todos_from_tool_content(content: Any) -> list[Dict[str, Any]]:
     return []
 
 
-def _build_todo_plan_from_trace(trace: Any) -> Dict[str, Any] | None:
-    if not isinstance(trace, list) or not trace:
+
+def _normalize_todo_steps(todos: list[Dict[str, Any]]) -> Dict[str, Any] | None:
+    if not todos:
         return None
 
-    latest_todos: list[Dict[str, Any]] = []
-
-    for entry in trace:
-        if not isinstance(entry, dict):
-            continue
-        messages = entry.get("tool_calls") or entry.get("calls") or []
-        if not isinstance(messages, list):
-            continue
-
-        write_todo_call_ids: set[str] = set()
-
-        for message in messages:
-            if not isinstance(message, dict):
-                continue
-
-            if message.get("type") == "AIMessage":
-                for call in message.get("tool_calls") or []:
-                    if not isinstance(call, dict):
-                        continue
-                    if call.get("name") != "write_todos":
-                        continue
-                    call_id = call.get("id")
-                    if isinstance(call_id, str) and call_id:
-                        write_todo_call_ids.add(call_id)
-                    todos = call.get("args", {}).get("todos")
-                    if isinstance(todos, list):
-                        latest_todos = [todo for todo in todos if isinstance(todo, dict)]
-
-            if message.get("type") == "ToolMessage":
-                tool_call_id = message.get("tool_call_id")
-                if write_todo_call_ids and tool_call_id not in write_todo_call_ids:
-                    continue
-                todos = _extract_todos_from_tool_content(message.get("content"))
-                if todos:
-                    latest_todos = todos
-
-    if not latest_todos:
-        return None
-
-    status_order = {"in_progress": 0, "pending": 1, "completed": 2}
     current_step = None
     steps: list[Dict[str, Any]] = []
 
-    for idx, todo in enumerate(latest_todos):
+    for idx, todo in enumerate(todos):
         step_status = str(todo.get("status", "pending")).strip().lower()
         if step_status not in {"pending", "in_progress", "completed"}:
             step_status = "pending"
@@ -329,13 +295,107 @@ def _build_todo_plan_from_trace(trace: Any) -> Dict[str, Any] | None:
                 "key": f"todo_{idx + 1}",
                 "label": str(todo.get("content", f"Todo {idx + 1}")),
                 "status": step_status,
-                "detail": "Completed" if step_status == "completed" else "Working on this task" if step_status == "in_progress" else "",
+                "detail": (
+                    "Completed"
+                    if step_status == "completed"
+                    else "Working on this task"
+                    if step_status == "in_progress"
+                    else ""
+                ),
                 "source": "write_todos",
-                "order": status_order.get(step_status, 1),
             }
         )
 
     return {"current_step": current_step, "steps": steps}
+
+
+def _extract_latest_todos_from_messages(messages: Any) -> list[Dict[str, Any]]:
+    if not isinstance(messages, list):
+        return []
+
+    latest_todos: list[Dict[str, Any]] = []
+    write_todo_call_ids: set[str] = set()
+
+    for message in messages:
+        if isinstance(message, dict):
+            message_type = message.get("type")
+            if message_type == "AIMessage":
+                for call in message.get("tool_calls") or []:
+                    if not isinstance(call, dict) or call.get("name") != "write_todos":
+                        continue
+                    call_id = call.get("id")
+                    if isinstance(call_id, str) and call_id:
+                        write_todo_call_ids.add(call_id)
+                    todos = call.get("args", {}).get("todos")
+                    if isinstance(todos, list):
+                        latest_todos = [todo for todo in todos if isinstance(todo, dict)]
+            elif message_type == "ToolMessage":
+                tool_call_id = message.get("tool_call_id")
+                if write_todo_call_ids and tool_call_id not in write_todo_call_ids:
+                    continue
+                todos = _extract_todos_from_tool_content(message.get("content"))
+                if todos:
+                    latest_todos = todos
+            continue
+
+        tool_calls = getattr(message, "tool_calls", None) or []
+        for call in tool_calls:
+            if not isinstance(call, dict) or call.get("name") != "write_todos":
+                continue
+            call_id = call.get("id")
+            if isinstance(call_id, str) and call_id:
+                write_todo_call_ids.add(call_id)
+            todos = call.get("args", {}).get("todos")
+            if isinstance(todos, list):
+                latest_todos = [todo for todo in todos if isinstance(todo, dict)]
+
+        tool_call_id = getattr(message, "tool_call_id", None)
+        if tool_call_id is not None:
+            if write_todo_call_ids and tool_call_id not in write_todo_call_ids:
+                continue
+            todos = _extract_todos_from_tool_content(getattr(message, "content", ""))
+            if todos:
+                latest_todos = todos
+
+    return latest_todos
+
+
+def _build_todo_plan_from_checkpoint(job: Dict[str, Any]) -> Dict[str, Any] | None:
+    user_id = str(job.get("user_id") or "")
+    if not user_id:
+        return None
+
+    try:
+        config = _build_user_config(user_id)
+        rca_app = _get_rca_app(config)
+        checkpoint_tuple = rca_app.checkpointer.get_tuple(
+            {"configurable": {"thread_id": user_id, "user_id": user_id}}
+        )
+    except Exception:
+        return None
+
+    if not checkpoint_tuple:
+        return None
+
+    history = checkpoint_tuple.checkpoint.get("channel_values", {}).get("history")
+    todos = _extract_latest_todos_from_messages(history)
+    return _normalize_todo_steps(todos)
+
+
+def _build_todo_plan_from_trace(trace: Any) -> Dict[str, Any] | None:
+    if not isinstance(trace, list) or not trace:
+        return None
+
+    latest_todos: list[Dict[str, Any]] = []
+    for entry in trace:
+        if not isinstance(entry, dict):
+            continue
+        messages = entry.get("tool_calls") or entry.get("calls") or []
+        todos = _extract_latest_todos_from_messages(messages)
+        if todos:
+            latest_todos = todos
+
+    return _normalize_todo_steps(latest_todos)
 
 
 def _build_progress_plan(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -360,13 +420,25 @@ def _build_progress_plan(job: Dict[str, Any]) -> Dict[str, Any]:
     if progress >= 100 and status == "completed":
         current_index = len(steps) - 1
 
+    failed_index = current_index
+    if status == "failed" and failed_index == -1:
+        for index, step in enumerate(steps):
+            if step["start"] <= progress <= step["end"]:
+                failed_index = index
+                break
+        if failed_index == -1:
+            failed_index = len(steps) - 1
+
     plan = []
     for index, step in enumerate(steps):
         step_status = "pending"
-        if status == "completed" or progress >= step["end"]:
+        if status == "failed":
+            if index < failed_index:
+                step_status = "completed"
+            elif index == failed_index:
+                step_status = "failed"
+        elif status == "completed" or progress >= step["end"]:
             step_status = "completed"
-        elif status == "failed" and current_index == -1 and index == len(steps) - 1:
-            step_status = "failed"
         elif index == current_index:
             step_status = "in_progress"
 
@@ -375,7 +447,7 @@ def _build_progress_plan(job: Dict[str, Any]) -> Dict[str, Any]:
             detail = f"Working on: {message or step['label']}"
         elif step_status == "completed":
             detail = "Completed"
-        elif status == "failed" and (index == current_index or current_index == -1):
+        elif step_status == "failed":
             detail = f"Failed: {message}"
 
         plan.append(
@@ -387,8 +459,17 @@ def _build_progress_plan(job: Dict[str, Any]) -> Dict[str, Any]:
             }
         )
 
+    if status == "failed":
+        resolved_current_index = failed_index
+    else:
+        resolved_current_index = current_index
+
     return {
-        "current_step": plan[current_index]["key"] if current_index >= 0 else None,
+        "current_step": (
+            plan[resolved_current_index]["key"]
+            if resolved_current_index >= 0
+            else None
+        ),
         "steps": plan,
     }
 
@@ -524,6 +605,8 @@ async def chat_status(job_id: str) -> Dict[str, Any]:
         job["plan"] = _build_progress_plan(job)
         trace = (job.get("result") or {}).get("trace")
         todo_plan = _build_todo_plan_from_trace(trace)
+        if not todo_plan and job.get("status") in {"queued", "running"}:
+            todo_plan = _build_todo_plan_from_checkpoint(job)
         if todo_plan:
             job["todo_plan"] = todo_plan
         return job
