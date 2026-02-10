@@ -123,7 +123,16 @@ export RCA_MCP_SALESFORCE_URL="http://localhost:8600"
 export RCA_MCP_SAP_URL="http://localhost:8700"
 ```
 
-6. **(Optional) Enable Langfuse observability** to capture traces, generations, and tool calls:
+6. **(Optional) Configure PII middleware behavior for nested agents**:
+
+```bash
+# full   = same PII behavior as router agent
+# nested = reduced nested-agent profile (default)
+# off    = disable PII middleware inside nested specialist agents
+export RCA_NESTED_AGENT_PII_PROFILE="nested"
+```
+
+7. **(Optional) Enable Langfuse observability** to capture traces, generations, and tool calls:
 
 ```bash
 export LANGFUSE_ENABLED="true"
@@ -136,7 +145,7 @@ export LANGFUSE_RELEASE="rca-app@1.0.0"
 export LANGFUSE_DEBUG="false"
 ```
 
-7. **(Optional) Enable Langfuse prompt management** to sync prompts from this repo:
+8. **(Optional) Enable Langfuse prompt management** to sync prompts from this repo:
 
 ```bash
 export LANGFUSE_PROMPT_ENABLED="true"

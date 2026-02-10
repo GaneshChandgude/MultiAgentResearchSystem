@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import TodoListMiddleware
@@ -29,9 +29,18 @@ from .utils import (
 logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
 
-def build_agent_middleware(config: AppConfig, *, include_todo: bool = False):
+def build_agent_middleware(
+    config: AppConfig,
+    *,
+    include_todo: bool = False,
+    include_pii: bool = True,
+    pii_profile: Literal["full", "nested"] = "full",
+):
     tool_output_guardrails = make_tool_output_guardrails(config)
-    middleware = [handle_tool_errors, *build_pii_middleware(config), tool_output_guardrails]
+    middleware = [handle_tool_errors]
+    if include_pii:
+        middleware.extend(build_pii_middleware(config, profile=pii_profile))
+    middleware.append(tool_output_guardrails)
     if include_todo:
         middleware.append(TodoListMiddleware())
     return middleware
@@ -44,7 +53,11 @@ def build_hypothesis_tool(config: AppConfig, store, checkpointer, llm):
             create_manage_memory_tool(namespace=("hypothesis", "{user_id}")),
             create_search_memory_tool(namespace=("hypothesis", "{user_id}")),
         ],
-        middleware=build_agent_middleware(config),
+        middleware=build_agent_middleware(
+            config,
+            include_pii=config.nested_agent_pii_profile != "off",
+            pii_profile=("nested" if config.nested_agent_pii_profile == "nested" else "full"),
+        ),
         store=store,
         checkpointer=checkpointer,
     )
@@ -138,7 +151,11 @@ def build_sales_analysis_tool(config: AppConfig, store, checkpointer, llm, sales
     sales_react_agent = create_agent(
         model=llm,
         tools=sales_tools,
-        middleware=build_agent_middleware(config),
+        middleware=build_agent_middleware(
+            config,
+            include_pii=config.nested_agent_pii_profile != "off",
+            pii_profile=("nested" if config.nested_agent_pii_profile == "nested" else "full"),
+        ),
         store=store,
         checkpointer=checkpointer,
     )
@@ -272,7 +289,11 @@ def build_inventory_analysis_tool(
     inventory_react_agent = create_agent(
         model=llm,
         tools=inventory_tools,
-        middleware=build_agent_middleware(config),
+        middleware=build_agent_middleware(
+            config,
+            include_pii=config.nested_agent_pii_profile != "off",
+            pii_profile=("nested" if config.nested_agent_pii_profile == "nested" else "full"),
+        ),
         store=store,
         checkpointer=checkpointer,
     )
@@ -393,7 +414,11 @@ def build_validation_tool(config: AppConfig, store, checkpointer, llm):
             create_manage_memory_tool(namespace=("hypothesis_validation", "{user_id}")),
             create_search_memory_tool(namespace=("hypothesis_validation", "{user_id}")),
         ],
-        middleware=build_agent_middleware(config),
+        middleware=build_agent_middleware(
+            config,
+            include_pii=config.nested_agent_pii_profile != "off",
+            pii_profile=("nested" if config.nested_agent_pii_profile == "nested" else "full"),
+        ),
         store=store,
         checkpointer=checkpointer,
     )
@@ -507,7 +532,11 @@ def build_root_cause_tool(config: AppConfig, store, checkpointer, llm):
     root_cause_react_agent = create_agent(
         model=llm,
         tools=[],
-        middleware=build_agent_middleware(config),
+        middleware=build_agent_middleware(
+            config,
+            include_pii=config.nested_agent_pii_profile != "off",
+            pii_profile=("nested" if config.nested_agent_pii_profile == "nested" else "full"),
+        ),
         store=store,
         checkpointer=checkpointer,
     )
@@ -617,7 +646,11 @@ def build_report_tool(config: AppConfig, store, checkpointer, llm):
     rca_report_agent = create_agent(
         model=llm,
         tools=[],
-        middleware=build_agent_middleware(config),
+        middleware=build_agent_middleware(
+            config,
+            include_pii=config.nested_agent_pii_profile != "off",
+            pii_profile=("nested" if config.nested_agent_pii_profile == "nested" else "full"),
+        ),
         store=store,
         checkpointer=checkpointer,
     )
