@@ -180,6 +180,12 @@ def _extract_query_id(request: Any) -> str | None:
         if isinstance(query_id, str) and query_id.strip():
             return query_id.strip()
 
+        state_configurable = request.state.get("configurable")
+        if isinstance(state_configurable, dict):
+            query_id = state_configurable.get("query_id")
+            if isinstance(query_id, str) and query_id.strip():
+                return query_id.strip()
+
     return None
 
 
