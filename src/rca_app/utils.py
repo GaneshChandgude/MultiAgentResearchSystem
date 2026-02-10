@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 from langchain.agents.middleware import wrap_tool_call
 from langchain.messages import ToolMessage
 from langchain_core.messages import AIMessage
+from langgraph.types import Command
 
 from .config import AppConfig
 from .guardrails import apply_output_guardrails, apply_value_guardrails
@@ -98,6 +99,63 @@ def handle_tool_errors(request, handler):
             tool_call_id=request.tool_call["id"],
         )
 
+
+
+
+def _extract_todos_from_tool_call(request: Any, result: Any) -> List[Dict[str, Any]]:
+    tool_call = request.tool_call if isinstance(request.tool_call, dict) else {}
+    args = tool_call.get("args", {})
+    raw_todos = args.get("todos") if isinstance(args, dict) else None
+
+    if not isinstance(raw_todos, list) and isinstance(result, Command) and isinstance(result.update, dict):
+        command_todos = result.update.get("todos")
+        if isinstance(command_todos, list):
+            raw_todos = command_todos
+
+    if not isinstance(raw_todos, list):
+        return []
+
+    return [todo for todo in raw_todos if isinstance(todo, dict)]
+
+
+def _build_todo_progress(todos: List[Dict[str, Any]]) -> Dict[str, Any]:
+    total = len(todos)
+    completed = 0
+    in_progress = 0
+
+    for todo in todos:
+        status = str(todo.get("status", "pending")).strip().lower()
+        if status == "completed":
+            completed += 1
+        elif status == "in_progress":
+            in_progress += 1
+
+    percent = int((completed / total) * 100) if total else 0
+    return {
+        "total": total,
+        "completed": completed,
+        "in_progress": in_progress,
+        "pending": max(total - completed - in_progress, 0),
+        "percent": percent,
+        "source": "write_todos",
+    }
+
+
+@wrap_tool_call
+def sync_todo_progress(request, handler):
+    result = handler(request)
+
+    tool_name = request.tool_call.get("name") if isinstance(request.tool_call, dict) else None
+    if tool_name != "write_todos":
+        return result
+
+    todos = _extract_todos_from_tool_call(request, result)
+    if not todos or not isinstance(request.state, dict):
+        return result
+
+    request.state["todos"] = todos
+    request.state["todo_progress"] = _build_todo_progress(todos)
+    return result
 
 def make_tool_output_guardrails(config: AppConfig):
     @wrap_tool_call

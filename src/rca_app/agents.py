@@ -24,6 +24,7 @@ from .utils import (
     make_tool_output_guardrails,
     process_response,
     serialize_messages,
+    sync_todo_progress,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,7 @@ def build_agent_middleware(
         middleware.extend(build_pii_middleware(config, profile=pii_profile))
     middleware.append(tool_output_guardrails)
     if include_todo:
+        middleware.append(sync_todo_progress)
         middleware.append(TodoListMiddleware())
     return middleware
 
@@ -805,6 +807,7 @@ def orchestration_agent(
     )
     result = router_agent.invoke({"messages": messages}, tool_config)
     final_msg = result["messages"][-1].content
+    todos = result.get("todos")
 
     internal_msgs = result["messages"][2:-1]
     tool_call_msgs = filter_tool_messages(internal_msgs)
@@ -816,6 +819,8 @@ def orchestration_agent(
 
     rca_state["output"] = final_msg
     rca_state["trace"] = trace_entry
+    if isinstance(todos, list):
+        rca_state["todos"] = [todo for todo in todos if isinstance(todo, dict)]
     logger.info("Orchestration agent completed for user_id=%s", config["configurable"]["user_id"])
     logger.debug("Orchestration agent tool call count=%s", len(trace_entry["tool_calls"]))
 

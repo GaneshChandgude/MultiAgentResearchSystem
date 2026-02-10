@@ -237,7 +237,13 @@ def _run_job(job_id: str, user_id: str, query: str) -> None:
             status="completed",
             progress=100,
             message="Complete",
-            result={"chat_id": chat_id, "response": response, "trace": trace},
+            result={
+                "chat_id": chat_id,
+                "response": response,
+                "trace": trace,
+                "todos": result.get("todos", []),
+                "todo_progress": result.get("todo_progress", {}),
+            },
         )
     except Exception as exc:
         logger.exception("RCA job failed")
@@ -285,11 +291,17 @@ def _normalize_todo_steps(todos: list[Dict[str, Any]]) -> Dict[str, Any] | None:
 
     current_step = None
     steps: list[Dict[str, Any]] = []
+    completed = 0
+    in_progress = 0
 
     for idx, todo in enumerate(todos):
         step_status = str(todo.get("status", "pending")).strip().lower()
         if step_status not in {"pending", "in_progress", "completed"}:
             step_status = "pending"
+        if step_status == "completed":
+            completed += 1
+        elif step_status == "in_progress":
+            in_progress += 1
         if current_step is None and step_status == "in_progress":
             current_step = f"todo_{idx + 1}"
         steps.append(
@@ -308,7 +320,19 @@ def _normalize_todo_steps(todos: list[Dict[str, Any]]) -> Dict[str, Any] | None:
             }
         )
 
-    return {"current_step": current_step, "steps": steps}
+    total = len(steps)
+    return {
+        "current_step": current_step,
+        "steps": steps,
+        "progress": {
+            "total": total,
+            "completed": completed,
+            "in_progress": in_progress,
+            "pending": max(total - completed - in_progress, 0),
+            "percent": int((completed / total) * 100) if total else 0,
+            "source": "write_todos",
+        },
+    }
 
 
 def _extract_latest_todos_from_messages(messages: Any) -> list[Dict[str, Any]]:
@@ -379,7 +403,20 @@ def _build_todo_plan_from_checkpoint(job: Dict[str, Any]) -> Dict[str, Any] | No
     if not checkpoint_tuple:
         return None
 
-    history = checkpoint_tuple.checkpoint.get("channel_values", {}).get("history")
+    channel_values = checkpoint_tuple.checkpoint.get("channel_values", {})
+    raw_todos = channel_values.get("todos")
+    raw_todo_progress = channel_values.get("todo_progress")
+    if isinstance(raw_todos, list):
+        todo_plan = _normalize_todo_steps([todo for todo in raw_todos if isinstance(todo, dict)])
+        if todo_plan:
+            if isinstance(raw_todo_progress, dict):
+                todo_plan["progress"] = {
+                    **todo_plan.get("progress", {}),
+                    **raw_todo_progress,
+                }
+            return todo_plan
+
+    history = channel_values.get("history")
     todos = _extract_latest_todos_from_messages(history)
     return _normalize_todo_steps(todos)
 
@@ -398,6 +435,29 @@ def _build_todo_plan_from_trace(trace: Any) -> Dict[str, Any] | None:
             latest_todos = todos
 
     return _normalize_todo_steps(latest_todos)
+
+
+def _build_todo_plan_from_result(job: Dict[str, Any]) -> Dict[str, Any] | None:
+    result = job.get("result")
+    if not isinstance(result, dict):
+        return None
+
+    todos = result.get("todos")
+    if not isinstance(todos, list):
+        return None
+
+    todo_plan = _normalize_todo_steps([todo for todo in todos if isinstance(todo, dict)])
+    if not todo_plan:
+        return None
+
+    persisted_progress = result.get("todo_progress")
+    if isinstance(persisted_progress, dict):
+        todo_plan["progress"] = {
+            **todo_plan.get("progress", {}),
+            **persisted_progress,
+        }
+
+    return todo_plan
 
 
 def _build_progress_plan(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -608,7 +668,9 @@ async def chat_status(job_id: str) -> Dict[str, Any]:
         job = store.get_job(job_id)
         job["plan"] = _build_progress_plan(job)
         trace = (job.get("result") or {}).get("trace")
-        todo_plan = _build_todo_plan_from_trace(trace)
+        todo_plan = _build_todo_plan_from_result(job)
+        if not todo_plan:
+            todo_plan = _build_todo_plan_from_trace(trace)
         if not todo_plan and job.get("status") in {"queued", "running"}:
             todo_plan = _build_todo_plan_from_checkpoint(job)
         if todo_plan:
