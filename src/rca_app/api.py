@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import logging
 from dataclasses import asdict, replace
@@ -247,6 +248,151 @@ def _run_job(job_id: str, user_id: str, query: str) -> None:
         )
 
 
+def _extract_todos_from_tool_content(content: Any) -> list[Dict[str, Any]]:
+    if not isinstance(content, str):
+        return []
+    text = content.strip()
+    if not text:
+        return []
+
+    candidates = [text]
+    marker = "Updated todo list to"
+    if marker in text:
+        candidates.insert(0, text.split(marker, 1)[1].strip())
+
+    for candidate in candidates:
+        try:
+            parsed = ast.literal_eval(candidate)
+        except (ValueError, SyntaxError):
+            continue
+        if isinstance(parsed, list):
+            return [item for item in parsed if isinstance(item, dict)]
+
+    return []
+
+
+def _build_todo_plan_from_trace(trace: Any) -> Dict[str, Any] | None:
+    if not isinstance(trace, list) or not trace:
+        return None
+
+    latest_todos: list[Dict[str, Any]] = []
+
+    for entry in trace:
+        if not isinstance(entry, dict):
+            continue
+        messages = entry.get("tool_calls") or entry.get("calls") or []
+        if not isinstance(messages, list):
+            continue
+
+        write_todo_call_ids: set[str] = set()
+
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+
+            if message.get("type") == "AIMessage":
+                for call in message.get("tool_calls") or []:
+                    if not isinstance(call, dict):
+                        continue
+                    if call.get("name") != "write_todos":
+                        continue
+                    call_id = call.get("id")
+                    if isinstance(call_id, str) and call_id:
+                        write_todo_call_ids.add(call_id)
+                    todos = call.get("args", {}).get("todos")
+                    if isinstance(todos, list):
+                        latest_todos = [todo for todo in todos if isinstance(todo, dict)]
+
+            if message.get("type") == "ToolMessage":
+                tool_call_id = message.get("tool_call_id")
+                if write_todo_call_ids and tool_call_id not in write_todo_call_ids:
+                    continue
+                todos = _extract_todos_from_tool_content(message.get("content"))
+                if todos:
+                    latest_todos = todos
+
+    if not latest_todos:
+        return None
+
+    status_order = {"in_progress": 0, "pending": 1, "completed": 2}
+    current_step = None
+    steps: list[Dict[str, Any]] = []
+
+    for idx, todo in enumerate(latest_todos):
+        step_status = str(todo.get("status", "pending")).strip().lower()
+        if step_status not in {"pending", "in_progress", "completed"}:
+            step_status = "pending"
+        if current_step is None and step_status == "in_progress":
+            current_step = f"todo_{idx + 1}"
+        steps.append(
+            {
+                "key": f"todo_{idx + 1}",
+                "label": str(todo.get("content", f"Todo {idx + 1}")),
+                "status": step_status,
+                "detail": "Completed" if step_status == "completed" else "Working on this task" if step_status == "in_progress" else "",
+                "source": "write_todos",
+                "order": status_order.get(step_status, 1),
+            }
+        )
+
+    return {"current_step": current_step, "steps": steps}
+
+
+def _build_progress_plan(job: Dict[str, Any]) -> Dict[str, Any]:
+    steps = [
+        {"key": "queued", "label": "Queued and validated", "start": 0, "end": 15},
+        {"key": "config", "label": "Loading configuration", "start": 15, "end": 35},
+        {"key": "agents", "label": "Initializing RCA agents", "start": 35, "end": 60},
+        {"key": "analysis", "label": "Running root cause analysis", "start": 60, "end": 85},
+        {"key": "response", "label": "Assembling final response", "start": 85, "end": 100},
+    ]
+
+    progress = int(job.get("progress", 0))
+    status = str(job.get("status", "queued"))
+    message = str(job.get("message", ""))
+
+    current_index = -1
+    for index, step in enumerate(steps):
+        if step["start"] <= progress < step["end"]:
+            current_index = index
+            break
+
+    if progress >= 100 and status == "completed":
+        current_index = len(steps) - 1
+
+    plan = []
+    for index, step in enumerate(steps):
+        step_status = "pending"
+        if status == "completed" or progress >= step["end"]:
+            step_status = "completed"
+        elif status == "failed" and current_index == -1 and index == len(steps) - 1:
+            step_status = "failed"
+        elif index == current_index:
+            step_status = "in_progress"
+
+        detail = ""
+        if step_status == "in_progress":
+            detail = f"Working on: {message or step['label']}"
+        elif step_status == "completed":
+            detail = "Completed"
+        elif status == "failed" and (index == current_index or current_index == -1):
+            detail = f"Failed: {message}"
+
+        plan.append(
+            {
+                "key": step["key"],
+                "label": step["label"],
+                "status": step_status,
+                "detail": detail,
+            }
+        )
+
+    return {
+        "current_step": plan[current_index]["key"] if current_index >= 0 else None,
+        "steps": plan,
+    }
+
+
 @app.get("/api/health")
 @observe()
 async def health() -> Dict[str, str]:
@@ -374,7 +520,13 @@ async def start_chat(payload: ChatStartRequest, background_tasks: BackgroundTask
 @observe()
 async def chat_status(job_id: str) -> Dict[str, Any]:
     try:
-        return store.get_job(job_id)
+        job = store.get_job(job_id)
+        job["plan"] = _build_progress_plan(job)
+        trace = (job.get("result") or {}).get("trace")
+        todo_plan = _build_todo_plan_from_trace(trace)
+        if todo_plan:
+            job["todo_plan"] = todo_plan
+        return job
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

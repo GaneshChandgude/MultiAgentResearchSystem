@@ -731,6 +731,65 @@ function ChatScreen({ user }) {
     }
   };
 
+  const todoPlan = useMemo(() => {
+    if (!progress) return [];
+    if (Array.isArray(progress.todo_plan?.steps) && progress.todo_plan.steps.length) {
+      return progress.todo_plan.steps;
+    }
+    return [];
+  }, [progress]);
+
+  const executionPlan = useMemo(() => {
+    if (!progress) return [];
+    if (Array.isArray(progress.plan?.steps) && progress.plan.steps.length) {
+      return progress.plan.steps;
+    }
+
+    const fallback = [
+      { key: "queued", label: "Queued and validated", threshold: 15 },
+      { key: "config", label: "Loading configuration", threshold: 35 },
+      { key: "agents", label: "Initializing RCA agents", threshold: 60 },
+      { key: "analysis", label: "Running root cause analysis", threshold: 85 },
+      { key: "response", label: "Assembling final response", threshold: 100 }
+    ];
+
+    return fallback.map((step, index) => {
+      const completed = progress.status === "completed" || progress.progress >= step.threshold;
+      const inProgress =
+        !completed &&
+        progress.status !== "failed" &&
+        (index === 0 || progress.progress >= fallback[index - 1].threshold);
+      return {
+        key: step.key,
+        label: step.label,
+        status: completed ? "completed" : inProgress ? "in_progress" : "pending",
+        detail: inProgress ? `Working on: ${progress.message || step.label}` : completed ? "Completed" : ""
+      };
+    });
+  }, [progress]);
+
+  const renderPlan = (title, steps) => {
+    if (!steps.length) return null;
+    return (
+      <div className="todo-plan" aria-live="polite">
+        <h3>{title}</h3>
+        <ul>
+          {steps.map((step) => (
+            <li key={step.key} className={`todo-step ${step.status}`}>
+              <span className="todo-icon" aria-hidden="true">
+                {step.status === "completed" ? "✓" : step.status === "in_progress" ? "⏳" : step.status === "failed" ? "!" : "○"}
+              </span>
+              <div>
+                <p>{step.label}</p>
+                {step.detail ? <small>{step.detail}</small> : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
+
   return (
     <div className="chat-layout">
       <div>
@@ -783,6 +842,8 @@ function ChatScreen({ user }) {
               <strong>{progress.progress}%</strong>
             </div>
           ) : null}
+          {renderPlan("Execution plan", executionPlan)}
+          {renderPlan("Agent TODO plan", todoPlan)}
           <div className="chat-input">
             <div className="chat-input-main">
               <textarea
