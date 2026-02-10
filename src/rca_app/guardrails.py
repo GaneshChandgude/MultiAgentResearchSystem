@@ -48,6 +48,18 @@ _PII_PATTERNS = [
 
 _PII_MIDDLEWARE_TYPES = ("email", "credit_card", "ip", "mac_address", "url")
 
+
+class ScopedPIIMiddleware(PIIMiddleware):
+    """PII middleware variant with a unique LangChain middleware name."""
+
+    def __init__(self, pii_type: str, *, scope: str, **kwargs: Any) -> None:
+        super().__init__(pii_type, **kwargs)
+        self._scope = scope
+
+    @property
+    def name(self) -> str:
+        return f"{super().name}:{self._scope}"
+
 @dataclass(frozen=True)
 class InputGuardrailResult:
     allowed: bool
@@ -325,8 +337,9 @@ def build_pii_middleware(config: AppConfig) -> List[PIIMiddleware]:
 
     if config.pii_block_input:
         middleware.extend(
-            PIIMiddleware(
+            ScopedPIIMiddleware(
                 pii_type,
+                scope="input:block",
                 strategy="block",
                 apply_to_input=True,
                 apply_to_output=False,
@@ -337,8 +350,9 @@ def build_pii_middleware(config: AppConfig) -> List[PIIMiddleware]:
 
     if config.pii_redaction_enabled:
         middleware.extend(
-            PIIMiddleware(
+            ScopedPIIMiddleware(
                 pii_type,
+                scope="output:redact",
                 strategy="redact",
                 apply_to_input=False,
                 apply_to_output=True,
