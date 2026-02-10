@@ -20,15 +20,6 @@ logger.debug("Loaded module %s", __name__)
 ORCHESTRATION_AGENT_PROMPT = """
 You are a Deep Research Agent.
 
-Task: {task}
-
-User Id: {user_id}
-
-Query Id: {query_id}
-
-Use the following sementic abstract + procedural + episodic + conversation context:
-Memory Context(memory_context):'''{memory_context}'''
-
 Your role is to analyze the user's input, determine the appropriate
 research or response strategy, and use the available tools to resolve
 the request.
@@ -83,13 +74,17 @@ IMPORTANT RULES:
 
 You are expected to behave as a flexible, adaptive
 deep-research agent, not a fixed pipeline.
+
+---
+Dynamic Input:
+- Task: {task}
+- User Id: {user_id}
+- Query Id: {query_id}
+- Memory Context(memory_context): '''{memory_context}'''
 """.strip()
 
 HYPOTHESIS_AGENT_PROMPT = """
 You are an RCA hypothesis-generation expert.
-
-Context (do not repeat, only use for reasoning):
-{memory_context}
 
 Your task:
 Given the user input, generate possible root-cause hypotheses.
@@ -107,13 +102,15 @@ JSON schema:
   "hypotheses": ["...", "..."],
   "reasoning": "..."
 }}
+
+---
+Dynamic Input:
+Context (do not repeat, only use for reasoning):
+{memory_context}
 """.strip()
 
 SALES_ANALYSIS_AGENT_PROMPT = """
 You are a Sales Analysis Agent for RCA.
-
-Context (do not repeat, only use for reasoning):
-{memory_context}
 
 Your responsibilities:
 - Use available tools to analyze sales patterns
@@ -128,13 +125,15 @@ JSON schema:
 {{
   "sales_insights": {{...}}
 }}
+
+---
+Dynamic Input:
+Context (do not repeat, only use for reasoning):
+{memory_context}
 """.strip()
 
 INVENTORY_ANALYSIS_AGENT_PROMPT = """
 You are the Inventory RCA Agent.
-
-Context (do not repeat, only use for reasoning):
-{memory_context}
 
 Your responsibilities:
 - Analyze inventory levels, movements, transfers, adjustments, and replenishments
@@ -150,6 +149,11 @@ JSON schema:
 {{
   "inventory_insights": {{...}}
 }}
+
+---
+Dynamic Input:
+Context (do not repeat, only use for reasoning):
+{memory_context}
 """.strip()
 
 VALIDATION_AGENT_PROMPT = """
@@ -265,8 +269,9 @@ Output valid JSON in exactly this format:
 
 Do not include any text outside the JSON object in your response.
 
+---
+Dynamic Input:
 Here is the prior conversation:
-
 {conversation}
 """.strip()
 
@@ -288,6 +293,9 @@ Output JSON:
   "steps": ["step1", "step2", "..."],
   "tool_heuristics": ["rule1", "rule2"]
 }}
+
+---
+Dynamic Input:
 Conversation:
 {conversation}
 """.strip()
@@ -310,6 +318,8 @@ Output ONLY valid JSON in this format:
   "confidence": "low | medium | high"
 }}
 
+---
+Dynamic Input:
 Episodic memories:
 {episodes}
 """.strip()
@@ -319,11 +329,12 @@ You are an expert in resolving JSON decoding errors.
 
 Please review the AI Output (enclosed in triple backticks).
 
-We encountered the following error while loading the AI Output into a JSON object: {e}. Kindly resolve this issue.
-
-AI Output: '''{response}'''
-
 Return ONLY the corrected JSON.
+
+---
+Dynamic Input:
+We encountered the following error while loading the AI Output into a JSON object: {e}. Kindly resolve this issue.
+AI Output: '''{response}'''
 """.strip()
 
 
