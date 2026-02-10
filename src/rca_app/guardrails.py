@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal
 
 from langchain.agents.middleware import PIIMiddleware
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -328,37 +328,50 @@ def _parse_guardrail_response(raw: str) -> ModelGuardrailResult:
     return ModelGuardrailResult(allowed, message, categories, language)
 
 
-def build_pii_middleware(config: AppConfig) -> List[PIIMiddleware]:
+def build_pii_middleware(
+    config: AppConfig,
+    *,
+    profile: Literal["full", "nested"] = "full",
+) -> List[PIIMiddleware]:
     """Build LangChain PII middleware without any LLM-based detection."""
     if not config.pii_middleware_enabled:
         return []
 
     middleware: List[PIIMiddleware] = []
 
-    if config.pii_block_input:
+    if profile == "nested":
+        pii_types = ("email", "ip", "mac_address")
+        enable_input_block = False
+        enable_output_redact = config.pii_redaction_enabled
+    else:
+        pii_types = _PII_MIDDLEWARE_TYPES
+        enable_input_block = config.pii_block_input
+        enable_output_redact = config.pii_redaction_enabled
+
+    if enable_input_block:
         middleware.extend(
             ScopedPIIMiddleware(
                 pii_type,
-                scope="input:block",
+                scope=f"{profile}:input:block",
                 strategy="block",
                 apply_to_input=True,
                 apply_to_output=False,
                 apply_to_tool_results=False,
             )
-            for pii_type in _PII_MIDDLEWARE_TYPES
+            for pii_type in pii_types
         )
 
-    if config.pii_redaction_enabled:
+    if enable_output_redact:
         middleware.extend(
             ScopedPIIMiddleware(
                 pii_type,
-                scope="output:redact",
+                scope=f"{profile}:output:redact",
                 strategy="redact",
                 apply_to_input=False,
                 apply_to_output=True,
                 apply_to_tool_results=False,
             )
-            for pii_type in _PII_MIDDLEWARE_TYPES
+            for pii_type in pii_types
         )
 
     return middleware
