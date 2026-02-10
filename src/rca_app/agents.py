@@ -24,7 +24,6 @@ from .utils import (
     make_tool_output_guardrails,
     process_response,
     serialize_messages,
-    sync_todo_progress,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,7 +42,6 @@ def build_agent_middleware(
         middleware.extend(build_pii_middleware(config, profile=pii_profile))
     middleware.append(tool_output_guardrails)
     if include_todo:
-        middleware.append(sync_todo_progress)
         middleware.append(TodoListMiddleware())
     return middleware
 
