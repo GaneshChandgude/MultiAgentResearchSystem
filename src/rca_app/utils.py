@@ -153,8 +153,18 @@ def _build_todo_progress(todos: List[Dict[str, Any]]) -> Dict[str, Any]:
 def _extract_query_id(request: Any) -> str | None:
     runtime = getattr(request, "runtime", None)
     runtime_config = getattr(runtime, "config", None)
-    runtime_configurable = getattr(runtime_config, "configurable", None)
-    query_id = getattr(runtime_configurable, "query_id", None)
+    runtime_configurable = None
+    if isinstance(runtime_config, dict):
+        runtime_configurable = runtime_config.get("configurable")
+    else:
+        runtime_configurable = getattr(runtime_config, "configurable", None)
+
+    query_id = None
+    if isinstance(runtime_configurable, dict):
+        query_id = runtime_configurable.get("query_id")
+    else:
+        query_id = getattr(runtime_configurable, "query_id", None)
+
     if isinstance(query_id, str) and query_id.strip():
         return query_id.strip()
 
