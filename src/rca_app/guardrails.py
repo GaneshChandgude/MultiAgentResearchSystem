@@ -236,9 +236,21 @@ def apply_value_guardrails(value: Any, *, config: AppConfig | None = None) -> An
 
 
 def apply_tool_output_guardrails(
-    trace: List[Dict[str, Any]], *, config: AppConfig | None = None
+    trace: Any, *, config: AppConfig | None = None
 ) -> List[Dict[str, Any]]:
-    return [apply_value_guardrails(entry, config=config) for entry in trace]
+    if trace is None:
+        return []
+
+    normalized_trace: List[Any]
+    if isinstance(trace, dict):
+        normalized_trace = [trace]
+    elif isinstance(trace, list):
+        normalized_trace = trace
+    else:
+        return []
+
+    guarded_trace = [apply_value_guardrails(entry, config=config) for entry in normalized_trace]
+    return [entry for entry in guarded_trace if isinstance(entry, dict)]
 
 
 def apply_model_guardrails(response: str, *, config: AppConfig) -> ModelGuardrailResult:
