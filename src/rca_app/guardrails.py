@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 import re
+from uuid import uuid4
 from typing import Any, Dict, List, Literal
 
 from langchain.agents.middleware import PIIMiddleware
@@ -55,12 +56,14 @@ class ScopedPIIMiddleware(PIIMiddleware):
     def __init__(self, pii_type: str, *, scope: str, **kwargs: Any) -> None:
         super().__init__(pii_type, **kwargs)
         self._scope = scope
+        self._pii_type = pii_type
+        self._name_suffix = uuid4().hex[:8]
 
     @property
     def name(self) -> str:
         # LangGraph reserves ":" in node names, and middleware names are used as
         # graph node identifiers when creating agents.
-        return f"{super().name}_{self._scope}".replace(":", "_")
+        return f"{super().name}_{self._pii_type}_{self._scope}_{self._name_suffix}".replace(":", "_")
 
 @dataclass(frozen=True)
 class InputGuardrailResult:
@@ -333,13 +336,16 @@ def _parse_guardrail_response(raw: str) -> ModelGuardrailResult:
 def build_pii_middleware(
     config: AppConfig,
     *,
-    profile: Literal["full", "nested"] = "full",
+    profile: Literal["full", "nested", "off"] = "full",
 ) -> List[PIIMiddleware]:
     """Build LangChain PII middleware without any LLM-based detection."""
     if not config.pii_middleware_enabled:
         return []
 
     middleware: List[PIIMiddleware] = []
+
+    if profile == "off":
+        return []
 
     if profile == "nested":
         pii_types = ("email", "ip", "mac_address")

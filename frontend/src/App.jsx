@@ -28,8 +28,11 @@ const emptyConfig = {
     langfuse_ca_bundle: ""
   },
   guardrails: {
+    pii_middleware_enabled: true,
     pii_redaction_enabled: true,
     pii_block_input: false,
+    nested_agent_pii_profile: "nested",
+    orchestrator_agent_pii_profile: "off",
     max_input_length: 4000,
     max_output_length: 8000,
     model_guardrails_enabled: true,
@@ -338,6 +341,16 @@ function ConfigWizard({ config, setConfig, user, initialKey, onClose }) {
       {currentKey === "guardrails" && (
         <div>
           <div className="input-group">
+            <label>Enable PII middleware</label>
+            <select
+              value={config.guardrails.pii_middleware_enabled ? "yes" : "no"}
+              onChange={(event) => updateField("guardrails", "pii_middleware_enabled", event.target.value === "yes")}
+            >
+              <option value="yes">Enabled</option>
+              <option value="no">Disabled</option>
+            </select>
+          </div>
+          <div className="input-group">
             <label>Enable PII redaction</label>
             <select
               value={config.guardrails.pii_redaction_enabled ? "yes" : "no"}
@@ -355,6 +368,30 @@ function ConfigWizard({ config, setConfig, user, initialKey, onClose }) {
             >
               <option value="yes">Enabled</option>
               <option value="no">Disabled</option>
+            </select>
+          </div>
+          <div className="input-group">
+            <label>Nested agent PII profile</label>
+            <select
+              value={config.guardrails.nested_agent_pii_profile}
+              onChange={(event) => updateField("guardrails", "nested_agent_pii_profile", event.target.value)}
+              disabled={!config.guardrails.pii_middleware_enabled}
+            >
+              <option value="full">full</option>
+              <option value="nested">nested</option>
+              <option value="off">off</option>
+            </select>
+          </div>
+          <div className="input-group">
+            <label>Orchestrator PII profile</label>
+            <select
+              value={config.guardrails.orchestrator_agent_pii_profile}
+              onChange={(event) => updateField("guardrails", "orchestrator_agent_pii_profile", event.target.value)}
+              disabled={!config.guardrails.pii_middleware_enabled}
+            >
+              <option value="full">full</option>
+              <option value="nested">nested</option>
+              <option value="off">off</option>
             </select>
           </div>
           <div className="input-group">
