@@ -4,7 +4,7 @@ import ast
 import json
 import logging
 from dataclasses import asdict, replace
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 import httpx
 from langfuse import Langfuse, observe
@@ -102,6 +102,8 @@ class GuardrailsConfigRequest(BaseModel):
     pii_middleware_enabled: bool = True
     pii_redaction_enabled: bool
     pii_block_input: bool
+    nested_agent_pii_profile: Literal["full", "nested", "off"] = "nested"
+    orchestrator_agent_pii_profile: Literal["full", "nested", "off"] = "off"
     max_input_length: int
     max_output_length: int
     model_guardrails_enabled: bool
@@ -537,6 +539,8 @@ async def config_defaults() -> ConfigResponse:
             "pii_middleware_enabled": base.pii_middleware_enabled,
             "pii_redaction_enabled": base.pii_redaction_enabled,
             "pii_block_input": base.pii_block_input,
+            "nested_agent_pii_profile": base.nested_agent_pii_profile,
+            "orchestrator_agent_pii_profile": base.orchestrator_agent_pii_profile,
             "max_input_length": base.max_input_length,
             "max_output_length": base.max_output_length,
             "model_guardrails_enabled": base.model_guardrails_enabled,

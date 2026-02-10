@@ -130,6 +130,11 @@ export RCA_MCP_SAP_URL="http://localhost:8700"
 # nested = reduced nested-agent profile (default)
 # off    = disable PII middleware inside nested specialist agents
 export RCA_NESTED_AGENT_PII_PROFILE="nested"
+
+# full   = same PII behavior as full profile
+# nested = reduced orchestrator profile
+# off    = disable PII middleware for the orchestrator/router agent
+export RCA_ORCHESTRATOR_PII_PROFILE="off"
 ```
 
 7. **(Optional) Enable Langfuse observability** to capture traces, generations, and tool calls:

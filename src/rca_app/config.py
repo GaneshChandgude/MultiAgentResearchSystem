@@ -37,6 +37,7 @@ class AppConfig:
     pii_redaction_enabled: bool
     pii_block_input: bool
     nested_agent_pii_profile: Literal["full", "nested", "off"]
+    orchestrator_agent_pii_profile: Literal["full", "nested", "off"]
     max_input_length: int
     max_output_length: int
     model_guardrails_enabled: bool
@@ -113,6 +114,13 @@ def load_config() -> AppConfig:
             nested_agent_pii_profile,
         )
         nested_agent_pii_profile = "nested"
+    orchestrator_agent_pii_profile = os.getenv("RCA_ORCHESTRATOR_PII_PROFILE", "off").strip().lower() or "off"
+    if orchestrator_agent_pii_profile not in {"full", "nested", "off"}:
+        logger.warning(
+            "Invalid RCA_ORCHESTRATOR_PII_PROFILE=%s; falling back to 'off'",
+            orchestrator_agent_pii_profile,
+        )
+        orchestrator_agent_pii_profile = "off"
     max_input_length = int(os.getenv("RCA_MAX_INPUT_LENGTH", "4000").strip() or "4000")
     max_output_length = int(os.getenv("RCA_MAX_OUTPUT_LENGTH", "8000").strip() or "8000")
     model_guardrails_enabled = os.getenv("RCA_MODEL_GUARDRAILS_ENABLED", "true").strip().lower() in {
@@ -161,6 +169,7 @@ def load_config() -> AppConfig:
         pii_redaction_enabled=pii_redaction_enabled,
         pii_block_input=pii_block_input,
         nested_agent_pii_profile=nested_agent_pii_profile,
+        orchestrator_agent_pii_profile=orchestrator_agent_pii_profile,
         max_input_length=max_input_length,
         max_output_length=max_output_length,
         model_guardrails_enabled=model_guardrails_enabled,
