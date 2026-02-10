@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List
 
 from langchain.agents.middleware import wrap_tool_call
 from langchain.messages import ToolMessage
@@ -16,6 +16,15 @@ from .langfuse_prompts import PROMPT_DEFINITIONS, render_prompt
 
 logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
+
+_todo_progress_sink: Callable[[str, List[Dict[str, Any]], Dict[str, Any]], None] | None = None
+
+
+def register_todo_progress_sink(
+    sink: Callable[[str, List[Dict[str, Any]], Dict[str, Any]], None] | None,
+) -> None:
+    global _todo_progress_sink
+    _todo_progress_sink = sink
 
 
 def extract_json_from_response(response_text: str) -> str:
@@ -141,6 +150,39 @@ def _build_todo_progress(todos: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _extract_query_id(request: Any) -> str | None:
+    tool_call = request.tool_call if isinstance(getattr(request, "tool_call", None), dict) else {}
+    tool_args = tool_call.get("args", {})
+    if isinstance(tool_args, dict):
+        query_id = tool_args.get("query_id")
+        if isinstance(query_id, str) and query_id.strip():
+            return query_id.strip()
+
+    runtime = getattr(request, "runtime", None)
+    runtime_context = getattr(runtime, "context", None)
+    if isinstance(runtime_context, dict):
+        configurable = runtime_context.get("configurable", {})
+        if isinstance(configurable, dict):
+            query_id = configurable.get("query_id")
+            if isinstance(query_id, str) and query_id.strip():
+                return query_id.strip()
+
+    request_config = getattr(request, "config", None)
+    if isinstance(request_config, dict):
+        configurable = request_config.get("configurable", {})
+        if isinstance(configurable, dict):
+            query_id = configurable.get("query_id")
+            if isinstance(query_id, str) and query_id.strip():
+                return query_id.strip()
+
+    if isinstance(getattr(request, "state", None), dict):
+        query_id = request.state.get("query_id")
+        if isinstance(query_id, str) and query_id.strip():
+            return query_id.strip()
+
+    return None
+
+
 @wrap_tool_call
 def sync_todo_progress(request, handler):
     result = handler(request)
@@ -153,8 +195,17 @@ def sync_todo_progress(request, handler):
     if not todos or not isinstance(request.state, dict):
         return result
 
+    todo_progress = _build_todo_progress(todos)
     request.state["todos"] = todos
-    request.state["todo_progress"] = _build_todo_progress(todos)
+    request.state["todo_progress"] = todo_progress
+
+    query_id = _extract_query_id(request)
+    if _todo_progress_sink and query_id:
+        try:
+            _todo_progress_sink(query_id, todos, todo_progress)
+        except Exception:
+            logger.exception("Failed to persist todo progress for query_id=%s", query_id)
+
     return result
 
 def make_tool_output_guardrails(config: AppConfig):

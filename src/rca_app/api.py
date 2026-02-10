@@ -21,6 +21,7 @@ from .logging_utils import configure_logging
 from .memory import mark_memory_useful, semantic_recall
 from .memory_reflection import add_episodic_memory, add_procedural_memory, build_semantic_memory
 from .ui_store import UIStore
+from .utils import register_todo_progress_sink
 
 logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
@@ -49,6 +50,13 @@ langfuse = Langfuse(
 langfuse_handler = CallbackHandler()
 
 store = UIStore(resolve_data_dir() / "rca_ui.db")
+register_todo_progress_sink(
+    lambda job_id, todos, todo_progress: store.update_job_todo_snapshot(
+        job_id,
+        todos=todos,
+        todo_progress=todo_progress,
+    )
+)
 _app_cache: Dict[str, Any] = {}
 _session_cache: Dict[str, Dict[str, Any]] = {}
 _pending_persistence: set[str] = set()
