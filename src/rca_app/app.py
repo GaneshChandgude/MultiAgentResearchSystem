@@ -115,6 +115,7 @@ def run_rca(
         "task": task,
         "output": "",
         "trace": [],
+        "query_id": query_id,
     }
     _hydrate_history_from_checkpoint(
         rca_state,
