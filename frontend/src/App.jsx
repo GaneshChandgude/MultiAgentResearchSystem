@@ -103,8 +103,8 @@ function LoginScreen({ onLogin }) {
   return (
     <div className="login-screen">
       <div className="login-card">
-        <h1>RCA Command Center</h1>
-        <p>Sign in to configure your RCA agents and explore root cause insights.</p>
+        <h1>Assistance Command Center</h1>
+        <p>Sign in to configure your assistants and explore operational insights.</p>
         <form onSubmit={submit}>
           <div className="input-group">
             <label htmlFor="username">User name</label>
@@ -805,6 +805,7 @@ function ChatScreen({ user }) {
     return [];
   }, [progress]);
 
+
   const executionPlan = useMemo(() => {
     if (!progress) return [];
     if (Array.isArray(progress.plan?.steps) && progress.plan.steps.length) {
@@ -812,11 +813,10 @@ function ChatScreen({ user }) {
     }
 
     const fallback = [
-      { key: "queued", label: "Queued and validated", threshold: 15 },
-      { key: "config", label: "Loading configuration", threshold: 35 },
-      { key: "agents", label: "Initializing RCA agents", threshold: 60 },
-      { key: "analysis", label: "Running root cause analysis", threshold: 85 },
-      { key: "response", label: "Assembling final response", threshold: 100 }
+      { key: "received", label: "Received request", threshold: 15 },
+      { key: "context", label: "Preparing context", threshold: 40 },
+      { key: "processing", label: "Processing analysis", threshold: 75 },
+      { key: "response", label: "Preparing response", threshold: 100 }
     ];
 
     return fallback.map((step, index) => {
