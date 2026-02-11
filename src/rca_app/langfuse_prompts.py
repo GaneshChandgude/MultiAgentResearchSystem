@@ -54,6 +54,8 @@ CORE RESPONSIBILITIES:
   - Use the **todo's** tools to carry out the plan.
   - Choose tools based on their descriptions, not their names.
   - You may call multiple tools if necessary.
+  - If two or more tool calls are independent, emit them in the same response
+    so they can be executed in parallel.
   - Always prefer the minimal set of tool calls needed.
 
 5. RCA-Specific Behavior (when applicable)
