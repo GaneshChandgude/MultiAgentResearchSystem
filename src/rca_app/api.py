@@ -482,6 +482,17 @@ def _build_todo_plan_from_checkpoint(job: Dict[str, Any]) -> Dict[str, Any] | No
         return None
 
     channel_values = checkpoint_tuple.checkpoint.get("channel_values", {})
+
+    # Checkpoints are keyed by user thread_id, so a newly started query can briefly
+    # observe todo data from the previous query before the first state write.
+    # Guard against leaking stale tasks by ensuring the checkpoint task matches
+    # the active job query.
+    checkpoint_task = channel_values.get("task")
+    job_query = job.get("query")
+    if isinstance(checkpoint_task, str) and isinstance(job_query, str):
+        if checkpoint_task.strip() and job_query.strip() and checkpoint_task.strip() != job_query.strip():
+            return None
+
     raw_todos = channel_values.get("todos")
     raw_todo_progress = channel_values.get("todo_progress")
     if isinstance(raw_todos, list):
