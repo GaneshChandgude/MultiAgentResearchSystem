@@ -983,7 +983,7 @@ export default function App() {
         <div className="topbar">
           <div>
             <h1>Conversation workspace</h1>
-            <p>Inspect traces and monitor assistant execution in real time.</p>
+            <p>Inspect traces and monitor execution in real time.</p>
           </div>
           <div className="topbar-actions">
             <div className="settings-menu">
