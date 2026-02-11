@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime
 from dataclasses import dataclass
 from collections import defaultdict
 from pathlib import Path
@@ -184,6 +185,44 @@ def append_rca_history(state: Dict[str, Any]) -> None:
     if state.get("output"):
         state.setdefault("history", []).append(AIMessage(content=state["output"]))
     logger.debug("Appended RCA history entries; total=%s", len(state.get("history", [])))
+
+
+def persist_agent_trace(
+    store: BaseStore,
+    *,
+    user_id: str,
+    query_id: str,
+    trace_entry: Dict[str, Any],
+) -> None:
+    namespace = ("trace", user_id, query_id)
+    key = f"trace_{int(time.time() * 1000)}"
+    payload = {
+        "recorded_at": datetime.utcnow().isoformat(),
+        "entry": trace_entry,
+    }
+    store.put(namespace, key, payload)
+    logger.debug("Persisted trace entry namespace=%s key=%s", namespace, key)
+
+
+def load_agent_trace(
+    store: BaseStore,
+    *,
+    user_id: str,
+    query_id: str,
+    limit: int = 100,
+) -> List[Dict[str, Any]]:
+    namespace = ("trace", user_id, query_id)
+    records = store.search(namespace, limit=limit)
+    entries: List[Dict[str, Any]] = []
+    for record in records:
+        value = getattr(record, "value", None)
+        if not isinstance(value, dict):
+            continue
+        entry = value.get("entry")
+        if isinstance(entry, dict):
+            entries.append(entry)
+    logger.debug("Loaded trace entries namespace=%s count=%s", namespace, len(entries))
+    return entries
 
 
 def episodic_recall(query: str, store: BaseStore, config: Dict[str, Any]):

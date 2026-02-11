@@ -13,7 +13,11 @@ from .config import AppConfig
 from .guardrails import build_pii_middleware
 from .langfuse_prompts import PROMPT_DEFINITIONS, render_prompt
 from .llm import get_planning_llm_model, get_specialist_llm_model
-from .memory import build_memory_augmented_prompt, append_rca_history
+from .memory import (
+    append_rca_history,
+    build_memory_augmented_prompt,
+    persist_agent_trace,
+)
 from .observability import build_langfuse_invoke_config
 from .toolset_registry import ToolsetRegistry
 from .toolsets import build_salesforce_toolset, build_sap_business_one_toolset
@@ -95,7 +99,6 @@ def build_hypothesis_tool(config: AppConfig, store, checkpointer, llm):
         Output:
             - dict: Contains updated fields:
                 - "hypotheses" (List[str]): Newly generated root-cause hypotheses.
-                - "trace" (List[Dict]): Trace entry recording the tool call.
 
         Notes:
             - Hypotheses are returned as plain strings with no categorization.
@@ -141,15 +144,20 @@ def build_hypothesis_tool(config: AppConfig, store, checkpointer, llm):
 
         internal_msgs = result["messages"][2:-1]
         tool_call_msgs = filter_tool_messages(internal_msgs)
+        if user_id and query_id:
+            persist_agent_trace(
+                store,
+                user_id=str(user_id),
+                query_id=str(query_id),
+                trace_entry={
+                    "agent": "HypothesisAgent",
+                    "step": "Generated hypotheses",
+                    "calls": serialize_messages(tool_call_msgs),
+                    "hypotheses": hypotheses,
+                },
+            )
 
-        trace_entry = {
-            "agent": "HypothesisAgent",
-            "step": "Generated hypotheses",
-            "calls": serialize_messages(tool_call_msgs),
-            "hypotheses": hypotheses,
-        }
-
-        return {"hypotheses": hypotheses, "trace": [trace_entry]}
+        return {"hypotheses": hypotheses}
 
     return hypothesis_agent_tool
 
@@ -209,9 +217,6 @@ def build_sales_analysis_tool(config: AppConfig, store, checkpointer, llm, sales
                 - "sales_insights":
                     Structured findings derived from sales and promotion data
                     that support or refute the provided hypotheses.
-                - "trace":
-                    A list of trace entries capturing tool calls and reasoning
-                    steps performed during the analysis.
         Notes:
             - This tool may call sales and promotion data tools as needed.
             - The output is strictly structured and intended for downstream
@@ -275,15 +280,20 @@ Hypotheses: {sales_related_hypotheses}
 
         internal_msgs = result["messages"][2:-1]
         tool_call_msgs = filter_tool_messages(internal_msgs)
+        if user_id and query_id:
+            persist_agent_trace(
+                store,
+                user_id=str(user_id),
+                query_id=str(query_id),
+                trace_entry={
+                    "agent": "SalesAnalysisAgent",
+                    "step": "Validated sales hypotheses",
+                    "calls": serialize_messages(tool_call_msgs),
+                    "sales_insights": sales_insights,
+                },
+            )
 
-        trace_entry = {
-            "agent": "SalesAnalysisAgent",
-            "step": "Validated sales hypotheses",
-            "calls": serialize_messages(tool_call_msgs),
-            "sales_insights": sales_insights,
-        }
-
-        return {"sales_insights": sales_insights, "trace": [trace_entry]}
+        return {"sales_insights": sales_insights}
 
     return sales_analysis_agent_tool, sales_tools
 
@@ -339,7 +349,6 @@ def build_inventory_analysis_tool(
         Output:
             - dict:
                 - "inventory_insights": Structured inventory analysis
-                - "trace": Tool-call trace for observability
         """
         logger.debug(
             "Inventory analysis tool invoked user_id=%s query_id=%s hypotheses=%s",
@@ -407,15 +416,20 @@ Hypotheses to validate: {inventory_related_hypotheses}
 
         internal_msgs = result["messages"][2:-1]
         tool_call_msgs = filter_tool_messages(internal_msgs)
+        if user_id and query_id:
+            persist_agent_trace(
+                store,
+                user_id=str(user_id),
+                query_id=str(query_id),
+                trace_entry={
+                    "agent": "InventoryAnalysisAgent",
+                    "step": "Validated inventory hypotheses",
+                    "calls": serialize_messages(tool_call_msgs),
+                    "inventory_insights": inventory_insights,
+                },
+            )
 
-        trace_entry = {
-            "agent": "InventoryAnalysisAgent",
-            "step": "Validated inventory hypotheses",
-            "calls": serialize_messages(tool_call_msgs),
-            "inventory_insights": inventory_insights,
-        }
-
-        return {"inventory_insights": inventory_insights, "trace": [trace_entry]}
+        return {"inventory_insights": inventory_insights}
 
     return inventory_analysis_agent_tool
 
@@ -469,7 +483,6 @@ def build_validation_tool(config: AppConfig, store, checkpointer, llm):
             - dict:
                 - "validated": Mapping of hypothesis → true / false
                 - "reasoning": Mapping of hypothesis → explanation
-                - "trace": Tool-call trace for observability
         """
         logger.debug(
             "Validation tool invoked user_id=%s query_id=%s hypotheses=%s",
@@ -528,15 +541,20 @@ Inventory insights:
 
         internal_msgs = result["messages"][2:-1]
         tool_call_msgs = filter_tool_messages(internal_msgs)
+        if user_id and query_id:
+            persist_agent_trace(
+                store,
+                user_id=str(user_id),
+                query_id=str(query_id),
+                trace_entry={
+                    "agent": "HypothesisValidationAgent",
+                    "step": "Validated hypotheses",
+                    "calls": serialize_messages(tool_call_msgs),
+                    "details": resp,
+                },
+            )
 
-        trace_entry = {
-            "agent": "HypothesisValidationAgent",
-            "step": "Validated hypotheses",
-            "calls": serialize_messages(tool_call_msgs),
-            "details": resp,
-        }
-
-        return {"validated": resp.get("validated"), "reasoning": resp.get("reasoning"), "trace": [trace_entry]}
+        return {"validated": resp.get("validated"), "reasoning": resp.get("reasoning")}
 
     return hypothesis_validation_agent_tool
 
@@ -559,15 +577,14 @@ def build_root_cause_tool(config: AppConfig, store, checkpointer, llm):
         validated_hypotheses: Dict[str, bool],
         sales_insights: Dict[str, Any],
         inventory_insights: Dict[str, Any],
-        trace: List[Dict[str, Any]],
         user_id: str,
         query_id: str,
     ) -> Dict[str, Any]:
         """
         Purpose:
             Produce the final Root Cause Analysis by synthesizing validated
-            hypotheses, sales insights, inventory insights, and prior analysis
-            trace into a structured RCA outcome.
+            hypotheses, sales insights, and inventory insights into a
+            structured RCA outcome.
 
         When to use:
             Use this tool after hypothesis validation has been completed.
@@ -576,7 +593,6 @@ def build_root_cause_tool(config: AppConfig, store, checkpointer, llm):
             - validated_hypotheses (dict): Hypothesis → true/false mapping
             - sales_insights (dict): Sales analysis output
             - inventory_insights (dict): Inventory analysis output
-            - trace (list): Prior agent trace entries
             - user_id (str): User/session identifier for scoped memory access
             - query_id (str): Query/thread identifier
 
@@ -584,7 +600,6 @@ def build_root_cause_tool(config: AppConfig, store, checkpointer, llm):
             - dict:
                 - "root_cause": Final structured RCA
                 - "reasoning": Explanation of RCA decisions
-                - "trace": Tool-call trace for observability
         """
         logger.debug(
             "Root cause tool invoked user_id=%s query_id=%s validated_hypotheses=%s",
@@ -611,9 +626,6 @@ Sales insights:
 
 Inventory insights:
 {inventory_insights}
-
-Prior trace:
-{trace}
 """,
             },
         ]
@@ -626,7 +638,6 @@ Prior trace:
             metadata={
                 "agent": "RootCauseAgent",
                 "task_length": len(str(validated_hypotheses)),
-                "trace_steps": len(trace),
             },
         )
         tool_config = {
@@ -642,15 +653,20 @@ Prior trace:
 
         internal_msgs = result["messages"][2:-1]
         tool_call_msgs = filter_tool_messages(internal_msgs)
+        if user_id and query_id:
+            persist_agent_trace(
+                store,
+                user_id=str(user_id),
+                query_id=str(query_id),
+                trace_entry={
+                    "agent": "RootCauseAnalysisAgent",
+                    "step": "Generated structured root cause",
+                    "calls": serialize_messages(tool_call_msgs),
+                    "root_cause": root_cause,
+                },
+            )
 
-        structured_trace_entry = {
-            "agent": "RootCauseAnalysisAgent",
-            "step": "Generated structured root cause",
-            "calls": serialize_messages(tool_call_msgs),
-            "root_cause": root_cause,
-        }
-
-        return {"root_cause": root_cause, "reasoning": reasoning, "trace": [structured_trace_entry]}
+        return {"root_cause": root_cause, "reasoning": reasoning}
 
     return root_cause_analysis_agent_tool
 
@@ -689,7 +705,6 @@ def build_report_tool(config: AppConfig, store, checkpointer, llm):
         Output:
             - dict:
                 - "report_text": Human-readable RCA report
-                - "trace": Tool-call trace for observability
         """
         logger.debug(
             "Report tool invoked user_id=%s query_id=%s",
@@ -729,13 +744,19 @@ Use the following structured RCA output:
         report_text = rca_report_agent.invoke(report_messages, tool_config).content
         logger.debug("Report tool generated report length=%s", len(report_text))
 
-        report_trace_entry = {
-            "agent": "RootCauseAnalysisAgent",
-            "step": "Generated RCA report",
-            "report_text": report_text,
-        }
+        if user_id and query_id:
+            persist_agent_trace(
+                store,
+                user_id=str(user_id),
+                query_id=str(query_id),
+                trace_entry={
+                    "agent": "RCAReportAgent",
+                    "step": "Generated final report",
+                    "report_preview": report_text[:500],
+                },
+            )
 
-        return {"report_text": report_text, "trace": [report_trace_entry]}
+        return {"report_text": report_text}
 
     return rca_report_agent_tool
 
@@ -830,6 +851,8 @@ def orchestration_agent(
 
     rca_state["output"] = final_msg
     rca_state["trace"] = trace_entry
+    if user_id and query_id:
+        persist_agent_trace(store, user_id=str(user_id), query_id=str(query_id), trace_entry=trace_entry)
     if isinstance(todos, list):
         rca_state["todos"] = [todo for todo in todos if isinstance(todo, dict)]
     logger.info("Orchestration agent completed for user_id=%s", config["configurable"]["user_id"])
