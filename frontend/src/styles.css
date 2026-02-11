@@ -687,3 +687,46 @@ body {
 .sample-query:hover {
   background: #dbeafe;
 }
+
+.guardrail-rule-hint {
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.guardrail-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.guardrail-rule-card {
+  border: 1px solid #dbe5f4;
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.guardrail-rule-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.guardrail-inline-button {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.guardrail-example-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.guardrail-add-rule {
+  margin-top: 10px;
+  width: fit-content;
+}
