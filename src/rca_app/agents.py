@@ -764,8 +764,12 @@ Use the following structured RCA output:
 
 def build_router_agent(config: AppConfig, store, checkpointer, llm, tools):
     logger.info("Building router agent with %s tools", len(tools))
+    # Allow the orchestration model to emit multiple independent tool calls
+    # in a single turn (for example, sales + inventory analysis) so LangGraph
+    # can execute them concurrently when the model chooses to do so.
+    parallel_router_llm = llm.bind(parallel_tool_calls=True)
     return create_agent(
-        model=llm,
+        model=parallel_router_llm,
         tools=tools,
         middleware=build_agent_middleware(
             config,
@@ -868,23 +872,24 @@ def build_agents(config: AppConfig, store, checkpointer):
     logger.info("Initializing RCA agents")
     planning_llm = get_planning_llm_model(config)
     specialist_llm = get_specialist_llm_model(config)
-    hypothesis_tool = build_hypothesis_tool(config, store, checkpointer, specialist_llm)
+    parallel_specialist_llm = specialist_llm.bind(parallel_tool_calls=True)
+    hypothesis_tool = build_hypothesis_tool(config, store, checkpointer, parallel_specialist_llm)
     salesforce_toolset = build_salesforce_toolset(config)
     sap_toolset = build_sap_business_one_toolset(config)
     tool_registry = ToolsetRegistry([salesforce_toolset, sap_toolset])
     sales_tool, sales_tools = build_sales_analysis_tool(
-        config, store, checkpointer, specialist_llm, salesforce_toolset.tools
+        config, store, checkpointer, parallel_specialist_llm, salesforce_toolset.tools
     )
     try:
         promo_tool = tool_registry.find_tool("get_promo_period")
     except KeyError:
         promo_tool = None
     inventory_tool = build_inventory_analysis_tool(
-        config, store, checkpointer, specialist_llm, sap_toolset.tools, promo_tool
+        config, store, checkpointer, parallel_specialist_llm, sap_toolset.tools, promo_tool
     )
-    validation_tool = build_validation_tool(config, store, checkpointer, specialist_llm)
-    root_cause_tool = build_root_cause_tool(config, store, checkpointer, specialist_llm)
-    report_tool = build_report_tool(config, store, checkpointer, specialist_llm)
+    validation_tool = build_validation_tool(config, store, checkpointer, parallel_specialist_llm)
+    root_cause_tool = build_root_cause_tool(config, store, checkpointer, parallel_specialist_llm)
+    report_tool = build_report_tool(config, store, checkpointer, parallel_specialist_llm)
 
 
 
@@ -910,7 +915,7 @@ def build_agents(config: AppConfig, store, checkpointer):
     return {
         "llm": planning_llm,
         "planning_llm": planning_llm,
-        "specialist_llm": specialist_llm,
+        "specialist_llm": parallel_specialist_llm,
         "router_agent": router_agent,
         "tools": {
             "hypothesis": hypothesis_tool,
