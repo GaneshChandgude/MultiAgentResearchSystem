@@ -21,7 +21,7 @@ from .logging_utils import configure_logging
 from .memory import mark_memory_useful, semantic_recall
 from .memory_reflection import add_episodic_memory, add_procedural_memory, build_semantic_memory
 from .ui_store import UIStore
-from .utils import register_todo_progress_sink
+from .utils import extract_json_from_response, register_todo_progress_sink
 
 logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
@@ -143,6 +143,7 @@ class ConfigResponse(BaseModel):
 class CapabilitiesResponse(BaseModel):
     user_id: str
     capabilities: str | None = None
+    sample_queries: list[str] = Field(default_factory=list)
     generated: bool = False
 
 
@@ -277,15 +278,50 @@ def _run_job(job_id: str, user_id: str, query: str) -> None:
         )
 
 
-def _generate_assistant_capabilities_once(user_id: str) -> tuple[str | None, bool]:
+def _normalize_sample_queries(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    queries: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        normalized = item.strip()
+        if normalized:
+            queries.append(normalized)
+    return queries[:6]
+
+
+def _parse_capabilities_payload(output: str) -> tuple[str | None, list[str]]:
+    text = output.strip()
+    if not text:
+        return None, []
+
+    try:
+        parsed = json.loads(extract_json_from_response(text))
+    except json.JSONDecodeError:
+        return text, []
+
+    if not isinstance(parsed, dict):
+        return text, []
+
+    capabilities = str(parsed.get("capabilities", "")).strip() or None
+    sample_queries = _normalize_sample_queries(parsed.get("sample_queries"))
+    if capabilities:
+        return capabilities, sample_queries
+    return text, sample_queries
+
+
+def _generate_assistant_capabilities_once(user_id: str) -> tuple[str | None, list[str], bool]:
     existing = store.get_assistant_capabilities(user_id)
+    existing_queries = store.get_assistant_sample_queries(user_id)
     if existing:
-        return existing, False
+        return existing, existing_queries, False
 
     capability_query = (
-        "Share your core capabilities for this assistant workspace. Describe how you can help users, "
-        "how you coordinate specialist agents/tools when needed, and what style of reasoning or "
-        "structured response users should expect. Keep it concise and UI-friendly."
+        "Generate a short assistant profile for this RCA workspace and include suggested user prompts. "
+        "Return JSON only with keys: capabilities (string) and sample_queries (array of 4 concise user questions). "
+        "Capabilities should explain how you help users, how you coordinate specialist agents/tools, and what "
+        "style of reasoning users should expect."
     )
     config = _build_user_config(user_id)
     rca_app = _get_rca_app(config)
@@ -295,11 +331,12 @@ def _generate_assistant_capabilities_once(user_id: str) -> tuple[str | None, boo
         user_id=user_id,
         query_id=f"capabilities-{user_id}",
     )
-    response = apply_output_guardrails(result.get("output", ""), config=config).strip()
-    if not response:
-        return None, False
-    store.upsert_assistant_capabilities(user_id, response)
-    return response, True
+    guarded_output = apply_output_guardrails(result.get("output", ""), config=config).strip()
+    capabilities, sample_queries = _parse_capabilities_payload(guarded_output)
+    if not capabilities:
+        return None, [], False
+    store.upsert_assistant_capabilities(user_id, capabilities, sample_queries)
+    return capabilities, sample_queries, True
 
 
 def _extract_todos_from_tool_content(content: Any) -> list[Dict[str, Any]]:
@@ -733,13 +770,19 @@ async def list_chats(user_id: str) -> Dict[str, Any]:
 @observe()
 async def get_assistant_capabilities(user_id: str, generate: bool = False) -> CapabilitiesResponse:
     capabilities = store.get_assistant_capabilities(user_id)
+    sample_queries = store.get_assistant_sample_queries(user_id)
     generated = False
     if not capabilities and generate:
         try:
-            capabilities, generated = _generate_assistant_capabilities_once(user_id)
+            capabilities, sample_queries, generated = _generate_assistant_capabilities_once(user_id)
         except Exception:
             logger.exception("Failed generating assistant capabilities for user_id=%s", user_id)
-    return CapabilitiesResponse(user_id=user_id, capabilities=capabilities, generated=generated)
+    return CapabilitiesResponse(
+        user_id=user_id,
+        capabilities=capabilities,
+        sample_queries=sample_queries,
+        generated=generated,
+    )
 
 
 @app.post("/api/feedback")

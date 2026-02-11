@@ -70,10 +70,21 @@ class UIStore:
             CREATE TABLE IF NOT EXISTS user_profiles (
                 user_id TEXT PRIMARY KEY,
                 assistant_capabilities TEXT NOT NULL,
+                sample_queries TEXT NOT NULL DEFAULT '[]',
                 updated_at TEXT NOT NULL
             );
             """
         )
+        columns = {
+            row[1]
+            for row in self._conn.execute("PRAGMA table_info(user_profiles)").fetchall()
+        }
+        if "sample_queries" not in columns:
+            with self._conn:
+                self._conn.execute(
+                    "ALTER TABLE user_profiles ADD COLUMN sample_queries TEXT NOT NULL DEFAULT '[]'"
+                )
+
         self._conn.commit()
 
     @staticmethod
@@ -329,18 +340,40 @@ class UIStore:
             return None
         return str(row[0]).strip() or None
 
-    def upsert_assistant_capabilities(self, user_id: str, capabilities: str) -> None:
+    def get_assistant_sample_queries(self, user_id: str) -> List[str]:
+        row = self._conn.execute(
+            "SELECT sample_queries FROM user_profiles WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        if not row or row[0] is None:
+            return []
+        try:
+            parsed = json.loads(row[0])
+        except (TypeError, json.JSONDecodeError):
+            return []
+        if not isinstance(parsed, list):
+            return []
+        return [str(item).strip() for item in parsed if str(item).strip()]
+
+    def upsert_assistant_capabilities(
+        self,
+        user_id: str,
+        capabilities: str,
+        sample_queries: Optional[List[str]] = None,
+    ) -> None:
         payload = capabilities.strip()
         if not payload:
             return
+        normalized_queries = [q.strip() for q in (sample_queries or []) if isinstance(q, str) and q.strip()]
         with self._conn:
             self._conn.execute(
                 """
-                INSERT INTO user_profiles (user_id, assistant_capabilities, updated_at)
-                VALUES (?, ?, ?)
+                INSERT INTO user_profiles (user_id, assistant_capabilities, sample_queries, updated_at)
+                VALUES (?, ?, ?, ?)
                 ON CONFLICT(user_id) DO UPDATE SET
                     assistant_capabilities = excluded.assistant_capabilities,
+                    sample_queries = excluded.sample_queries,
                     updated_at = excluded.updated_at
                 """,
-                (user_id, payload, self._now()),
+                (user_id, payload, json.dumps(normalized_queries), self._now()),
             )

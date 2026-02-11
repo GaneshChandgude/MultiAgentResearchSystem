@@ -710,10 +710,17 @@ function ChatScreen({ user }) {
   const [job, setJob] = useState(null);
   const [progress, setProgress] = useState(null);
   const [capabilities, setCapabilities] = useState("");
+  const [showCapabilities, setShowCapabilities] = useState(true);
+  const [sampleQueries, setSampleQueries] = useState([]);
 
   useEffect(() => {
+    setShowCapabilities(true);
+    setSampleQueries([]);
     apiRequest(`/api/capabilities/${user.user_id}?generate=true`)
-      .then((data) => setCapabilities((data.capabilities || "").trim()))
+      .then((data) => {
+        setCapabilities((data.capabilities || "").trim());
+        setSampleQueries(Array.isArray(data.sample_queries) ? data.sample_queries : []);
+      })
       .catch(() => undefined);
   }, [user.user_id]);
 
@@ -872,10 +879,37 @@ function ChatScreen({ user }) {
     <div className="chat-layout">
       <div>
         <div className="card">
-          {capabilities ? (
+          {capabilities && showCapabilities ? (
             <div className="capabilities-banner" aria-live="polite">
-              <h3>Assistant capabilities</h3>
+              <div className="capabilities-banner-header">
+                <h3>Assistant capabilities</h3>
+                <button
+                  type="button"
+                  className="capabilities-close"
+                  onClick={() => setShowCapabilities(false)}
+                  aria-label="Close assistant capabilities"
+                >
+                  ×
+                </button>
+              </div>
               <p>{capabilities}</p>
+              {sampleQueries.length ? (
+                <div className="sample-queries">
+                  <span>Try asking:</span>
+                  <div className="sample-query-list">
+                    {sampleQueries.map((query) => (
+                      <button
+                        key={query}
+                        type="button"
+                        className="sample-query"
+                        onClick={() => setInput(query)}
+                      >
+                        {query}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
           <div className="chat-window" style={{ marginTop: "24px" }}>

@@ -617,3 +617,58 @@ body {
   line-height: 1.5;
   white-space: pre-wrap;
 }
+
+
+.capabilities-banner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.capabilities-close {
+  border: none;
+  background: transparent;
+  color: #1d4ed8;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.capabilities-close:hover {
+  background: #dbeafe;
+}
+
+.sample-queries {
+  margin-top: 10px;
+}
+
+.sample-queries > span {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 8px;
+}
+
+.sample-query-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sample-query {
+  border: 1px solid #bfdbfe;
+  background: #ffffff;
+  color: #1e293b;
+  font-size: 12px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.sample-query:hover {
+  background: #dbeafe;
+}
