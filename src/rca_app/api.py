@@ -140,6 +140,12 @@ class ConfigResponse(BaseModel):
     guardrails: Dict[str, Any]
 
 
+class CapabilitiesResponse(BaseModel):
+    user_id: str
+    capabilities: str | None = None
+    generated: bool = False
+
+
 def _config_key(config: AppConfig) -> str:
     payload = asdict(config)
     payload["data_dir"] = str(payload["data_dir"])
@@ -269,6 +275,31 @@ def _run_job(job_id: str, user_id: str, query: str) -> None:
             message=str(exc),
             result={"error": str(exc)},
         )
+
+
+def _generate_assistant_capabilities_once(user_id: str) -> tuple[str | None, bool]:
+    existing = store.get_assistant_capabilities(user_id)
+    if existing:
+        return existing, False
+
+    capability_query = (
+        "Share your core capabilities for this assistant workspace. Describe how you can help users, "
+        "how you coordinate specialist agents/tools when needed, and what style of reasoning or "
+        "structured response users should expect. Keep it concise and UI-friendly."
+    )
+    config = _build_user_config(user_id)
+    rca_app = _get_rca_app(config)
+    result = run_rca(
+        rca_app,
+        capability_query,
+        user_id=user_id,
+        query_id=f"capabilities-{user_id}",
+    )
+    response = apply_output_guardrails(result.get("output", ""), config=config).strip()
+    if not response:
+        return None, False
+    store.upsert_assistant_capabilities(user_id, response)
+    return response, True
 
 
 def _extract_todos_from_tool_content(content: Any) -> list[Dict[str, Any]]:
@@ -696,6 +727,19 @@ async def chat_status(job_id: str) -> Dict[str, Any]:
 @observe()
 async def list_chats(user_id: str) -> Dict[str, Any]:
     return {"chats": store.list_chats(user_id)}
+
+
+@app.get("/api/capabilities/{user_id}", response_model=CapabilitiesResponse)
+@observe()
+async def get_assistant_capabilities(user_id: str, generate: bool = False) -> CapabilitiesResponse:
+    capabilities = store.get_assistant_capabilities(user_id)
+    generated = False
+    if not capabilities and generate:
+        try:
+            capabilities, generated = _generate_assistant_capabilities_once(user_id)
+        except Exception:
+            logger.exception("Failed generating assistant capabilities for user_id=%s", user_id)
+    return CapabilitiesResponse(user_id=user_id, capabilities=capabilities, generated=generated)
 
 
 @app.post("/api/feedback")
