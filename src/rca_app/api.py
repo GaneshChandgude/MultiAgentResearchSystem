@@ -108,6 +108,12 @@ class LangfuseConfigRequest(BaseModel):
 
 
 class GuardrailsConfigRequest(BaseModel):
+    class ModelInputGuardrailRule(BaseModel):
+        name: str
+        trigger_description: str = ""
+        trigger_examples: list[str] = Field(default_factory=list)
+        block_message: str
+
     user_id: str
     pii_middleware_enabled: bool = True
     pii_redaction_enabled: bool
@@ -119,6 +125,7 @@ class GuardrailsConfigRequest(BaseModel):
     model_guardrails_enabled: bool
     model_guardrails_moderation_enabled: bool
     model_guardrails_output_language: str
+    model_input_guardrail_rules: list[ModelInputGuardrailRule] = Field(default_factory=list)
 
 
 class ChatStartRequest(BaseModel):
@@ -697,6 +704,7 @@ async def config_defaults() -> ConfigResponse:
             "model_guardrails_enabled": base.model_guardrails_enabled,
             "model_guardrails_moderation_enabled": base.model_guardrails_moderation_enabled,
             "model_guardrails_output_language": base.model_guardrails_output_language,
+            "model_input_guardrail_rules": base.model_input_guardrail_rules,
         },
     )
 

@@ -39,7 +39,8 @@ const emptyConfig = {
     max_output_length: 8000,
     model_guardrails_enabled: true,
     model_guardrails_moderation_enabled: true,
-    model_guardrails_output_language: "English"
+    model_guardrails_output_language: "English",
+    model_input_guardrail_rules: []
   }
 };
 
@@ -146,6 +147,72 @@ function ConfigWizard({ config, setConfig, user, initialKey, onClose }) {
       ...prev,
       [section]: { ...prev[section], [field]: value }
     }));
+  };
+
+  const updateInputGuardrailRule = (index, field, value) => {
+    const existing = config.guardrails.model_input_guardrail_rules || [];
+    const updated = existing.map((rule, ruleIndex) =>
+      ruleIndex === index ? { ...rule, [field]: value } : rule
+    );
+    updateField("guardrails", "model_input_guardrail_rules", updated);
+  };
+
+  const addInputGuardrailRule = () => {
+    const existing = config.guardrails.model_input_guardrail_rules || [];
+    updateField("guardrails", "model_input_guardrail_rules", [
+      ...existing,
+      {
+        name: "",
+        trigger_description: "",
+        trigger_examples: [""],
+        block_message: ""
+      }
+    ]);
+  };
+
+  const removeInputGuardrailRule = (index) => {
+    const existing = config.guardrails.model_input_guardrail_rules || [];
+    updateField(
+      "guardrails",
+      "model_input_guardrail_rules",
+      existing.filter((_, ruleIndex) => ruleIndex !== index)
+    );
+  };
+
+  const updateRuleExample = (ruleIndex, exampleIndex, value) => {
+    const existing = config.guardrails.model_input_guardrail_rules || [];
+    const updated = existing.map((rule, index) => {
+      if (index !== ruleIndex) return rule;
+      const examples = Array.isArray(rule.trigger_examples) ? [...rule.trigger_examples] : [""];
+      examples[exampleIndex] = value;
+      return { ...rule, trigger_examples: examples };
+    });
+    updateField("guardrails", "model_input_guardrail_rules", updated);
+  };
+
+  const addRuleExample = (ruleIndex) => {
+    const existing = config.guardrails.model_input_guardrail_rules || [];
+    const updated = existing.map((rule, index) =>
+      index === ruleIndex
+        ? {
+            ...rule,
+            trigger_examples: [...(Array.isArray(rule.trigger_examples) ? rule.trigger_examples : []), ""]
+          }
+        : rule
+    );
+    updateField("guardrails", "model_input_guardrail_rules", updated);
+  };
+
+  const removeRuleExample = (ruleIndex, exampleIndex) => {
+    const existing = config.guardrails.model_input_guardrail_rules || [];
+    const updated = existing.map((rule, index) => {
+      if (index !== ruleIndex) return rule;
+      const examples = (Array.isArray(rule.trigger_examples) ? rule.trigger_examples : []).filter(
+        (_, idx) => idx !== exampleIndex
+      );
+      return { ...rule, trigger_examples: examples.length ? examples : [""] };
+    });
+    updateField("guardrails", "model_input_guardrail_rules", updated);
   };
 
   const saveCurrent = async () => {
@@ -466,6 +533,95 @@ function ConfigWizard({ config, setConfig, user, initialKey, onClose }) {
               onChange={(event) => updateField("guardrails", "model_guardrails_output_language", event.target.value)}
               disabled={!config.guardrails.model_guardrails_enabled}
             />
+          </div>
+          <div className="input-group">
+            <label>Model input guardrail rules</label>
+            <div className="guardrail-rule-hint">
+              Define multiple rules. If input matches a rule, the configured block response is returned.
+            </div>
+            <div className="guardrail-rule-list">
+              {(config.guardrails.model_input_guardrail_rules || []).map((rule, ruleIndex) => (
+                <div className="guardrail-rule-card" key={`guardrail-rule-${ruleIndex}`}>
+                  <div className="guardrail-rule-header">
+                    <strong>Rule {ruleIndex + 1}</strong>
+                    <button
+                      type="button"
+                      className="btn btn-outline guardrail-inline-button"
+                      onClick={() => removeInputGuardrailRule(ruleIndex)}
+                      disabled={!config.guardrails.model_guardrails_enabled}
+                    >
+                      Remove rule
+                    </button>
+                  </div>
+                  <div className="input-group">
+                    <label>Rule name</label>
+                    <input
+                      value={rule.name || ""}
+                      onChange={(event) => updateInputGuardrailRule(ruleIndex, "name", event.target.value)}
+                      placeholder="e.g. User asks about financial results"
+                      disabled={!config.guardrails.model_guardrails_enabled}
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label>Trigger description</label>
+                    <textarea
+                      value={rule.trigger_description || ""}
+                      onChange={(event) =>
+                        updateInputGuardrailRule(ruleIndex, "trigger_description", event.target.value)
+                      }
+                      placeholder="Describe when this rule should trigger"
+                      disabled={!config.guardrails.model_guardrails_enabled}
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label>Trigger examples</label>
+                    {(Array.isArray(rule.trigger_examples) ? rule.trigger_examples : []).map((example, exampleIndex) => (
+                      <div className="guardrail-example-row" key={`guardrail-rule-${ruleIndex}-example-${exampleIndex}`}>
+                        <input
+                          value={example || ""}
+                          onChange={(event) => updateRuleExample(ruleIndex, exampleIndex, event.target.value)}
+                          placeholder="What was NVIDIA's EPS last year?"
+                          disabled={!config.guardrails.model_guardrails_enabled}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-outline guardrail-inline-button"
+                          onClick={() => removeRuleExample(ruleIndex, exampleIndex)}
+                          disabled={!config.guardrails.model_guardrails_enabled}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="btn btn-secondary guardrail-inline-button"
+                      onClick={() => addRuleExample(ruleIndex)}
+                      disabled={!config.guardrails.model_guardrails_enabled}
+                    >
+                      + Add trigger example
+                    </button>
+                  </div>
+                  <div className="input-group">
+                    <label>Block response</label>
+                    <textarea
+                      value={rule.block_message || ""}
+                      onChange={(event) => updateInputGuardrailRule(ruleIndex, "block_message", event.target.value)}
+                      placeholder="I'm sorry, I can't discuss financial results."
+                      disabled={!config.guardrails.model_guardrails_enabled}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary guardrail-add-rule"
+              onClick={addInputGuardrailRule}
+              disabled={!config.guardrails.model_guardrails_enabled}
+            >
+              + Add guardrail rule
+            </button>
           </div>
         </div>
       )}

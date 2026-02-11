@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import logging
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
@@ -45,6 +46,7 @@ class AppConfig:
     model_guardrails_enabled: bool
     model_guardrails_moderation_enabled: bool
     model_guardrails_output_language: str
+    model_input_guardrail_rules: list[dict[str, Any]]
     recursion_limit: int
 
 
@@ -138,6 +140,17 @@ def load_config() -> AppConfig:
         "true",
     ).strip().lower() in {"1", "true", "yes", "on"}
     model_guardrails_output_language = os.getenv("RCA_MODEL_GUARDRAILS_OUTPUT_LANGUAGE", "English").strip()
+    model_input_guardrail_rules: list[dict[str, Any]] = []
+    model_input_guardrail_rules_raw = os.getenv("RCA_MODEL_INPUT_GUARDRAIL_RULES", "").strip()
+    if model_input_guardrail_rules_raw:
+        try:
+            parsed_rules = json.loads(model_input_guardrail_rules_raw)
+            if isinstance(parsed_rules, list):
+                model_input_guardrail_rules = [rule for rule in parsed_rules if isinstance(rule, dict)]
+            else:
+                logger.warning("RCA_MODEL_INPUT_GUARDRAIL_RULES must be a JSON array; ignoring.")
+        except json.JSONDecodeError:
+            logger.warning("Failed to parse RCA_MODEL_INPUT_GUARDRAIL_RULES; ignoring.")
     recursion_limit = int(os.getenv("RCA_RECURSION_LIMIT", "50").strip() or "50")
 
     logger.debug(
@@ -181,5 +194,6 @@ def load_config() -> AppConfig:
         model_guardrails_enabled=model_guardrails_enabled,
         model_guardrails_moderation_enabled=model_guardrails_moderation_enabled,
         model_guardrails_output_language=model_guardrails_output_language,
+        model_input_guardrail_rules=model_input_guardrail_rules,
         recursion_limit=recursion_limit,
     )
