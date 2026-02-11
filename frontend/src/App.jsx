@@ -709,6 +709,13 @@ function ChatScreen({ user }) {
   const [input, setInput] = useState("");
   const [job, setJob] = useState(null);
   const [progress, setProgress] = useState(null);
+  const [capabilities, setCapabilities] = useState("");
+
+  useEffect(() => {
+    apiRequest(`/api/capabilities/${user.user_id}?generate=true`)
+      .then((data) => setCapabilities((data.capabilities || "").trim()))
+      .catch(() => undefined);
+  }, [user.user_id]);
 
   useEffect(() => {
     apiRequest(`/api/chats/${user.user_id}`)
@@ -853,11 +860,12 @@ function ChatScreen({ user }) {
     <div className="chat-layout">
       <div>
         <div className="card">
-          <h2>Assistant</h2>
-          <p style={{ marginTop: "8px", color: "#475569" }}>
-            Ask a question about inventory, sales, or operational anomalies. The assistant will
-            coordinate assistants and return a narrative with supporting reasoning.
-          </p>
+          {capabilities ? (
+            <div className="capabilities-banner" aria-live="polite">
+              <h3>Assistant capabilities</h3>
+              <p>{capabilities}</p>
+            </div>
+          ) : null}
           {progress ? (
             <div className="progress-inline" style={{ marginTop: "16px" }}>
               <span style={{ width: `${progress.progress}%` }} />
@@ -975,7 +983,7 @@ export default function App() {
         <div className="topbar">
           <div>
             <h1>Conversation workspace</h1>
-            <p>Interact with the assistant and inspect traces in real time.</p>
+            <p>Inspect traces and monitor execution in real time.</p>
           </div>
           <div className="topbar-actions">
             <div className="settings-menu">

@@ -583,3 +583,26 @@ body {
   background: #fee2e2;
   color: #b91c1c;
 }
+
+.capabilities-banner {
+  margin-top: 14px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.capabilities-banner h3 {
+  font-size: 13px;
+  color: #1d4ed8;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.capabilities-banner p {
+  font-size: 14px;
+  color: #1e293b;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}

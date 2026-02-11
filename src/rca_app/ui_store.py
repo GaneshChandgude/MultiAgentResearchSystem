@@ -66,6 +66,12 @@ class UIStore:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                user_id TEXT PRIMARY KEY,
+                assistant_capabilities TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
             """
         )
         self._conn.commit()
@@ -313,3 +319,28 @@ class UIStore:
                 (feedback_id, chat_id, user_id, rating, comments or "", self._now()),
             )
         return feedback_id
+
+    def get_assistant_capabilities(self, user_id: str) -> Optional[str]:
+        row = self._conn.execute(
+            "SELECT assistant_capabilities FROM user_profiles WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return str(row[0]).strip() or None
+
+    def upsert_assistant_capabilities(self, user_id: str, capabilities: str) -> None:
+        payload = capabilities.strip()
+        if not payload:
+            return
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO user_profiles (user_id, assistant_capabilities, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    assistant_capabilities = excluded.assistant_capabilities,
+                    updated_at = excluded.updated_at
+                """,
+                (user_id, payload, self._now()),
+            )
