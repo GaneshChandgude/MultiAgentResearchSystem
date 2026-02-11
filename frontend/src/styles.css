@@ -338,6 +338,17 @@ body {
   animation-delay: 0.3s;
 }
 
+.assistant-progress-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.typing-status {
+  color: #475569;
+  font-size: 13px;
+}
+
 .progress-card {
   background: #0f172a;
   color: #f8fafc;
