@@ -9,7 +9,7 @@ from langgraph.graph import StateGraph
 
 from .agents import build_agents, orchestration_agent
 from .config import AppConfig
-from .memory import setup_memory
+from .memory import load_agent_trace, setup_memory
 from .observability import build_langfuse_invoke_config
 from .types import RCAState
 
@@ -129,4 +129,10 @@ def run_rca(
         resolved_thread_id,
     )
     logger.debug("RCA task length=%s", len(task))
-    return app.app.invoke(rca_state, {**config, **observability_config})
+    result = app.app.invoke(rca_state, {**config, **observability_config})
+    result["trace"] = load_agent_trace(
+        app.store,
+        user_id=user_id,
+        query_id=query_id,
+    )
+    return result
