@@ -741,7 +741,8 @@ Use the following structured RCA output:
             "configurable": {"user_id": user_id, "thread_id": user_id},
             **observability_config,
         }
-        report_text = rca_report_agent.invoke(report_messages, tool_config).content
+        report_result = rca_report_agent.invoke({"messages": report_messages}, tool_config)
+        report_text = report_result["messages"][-1].content
         logger.debug("Report tool generated report length=%s", len(report_text))
 
         if user_id and query_id:
