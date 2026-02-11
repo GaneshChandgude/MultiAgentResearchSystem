@@ -834,6 +834,18 @@ function ChatScreen({ user }) {
     });
   }, [progress]);
 
+  const activeProgressLabel = useMemo(() => {
+    if (!progress) return "";
+    const currentStep = executionPlan.find((step) => step.status === "in_progress");
+    if (currentStep) {
+      return currentStep.label;
+    }
+    if (progress.status === "failed") {
+      return "Analysis failed";
+    }
+    return progress.message || "Running analysis";
+  }, [executionPlan, progress]);
+
   const renderPlan = (title, steps) => {
     if (!steps.length) return null;
     return (
@@ -866,11 +878,6 @@ function ChatScreen({ user }) {
               <p>{capabilities}</p>
             </div>
           ) : null}
-          {progress ? (
-            <div className="progress-inline" style={{ marginTop: "16px" }}>
-              <span style={{ width: `${progress.progress}%` }} />
-            </div>
-          ) : null}
           <div className="chat-window" style={{ marginTop: "24px" }}>
             {messages.map((msg) => (
               <div
@@ -894,22 +901,18 @@ function ChatScreen({ user }) {
               <div className="message-row assistant">
                 <div className="message-avatar assistant">AI</div>
                 <div className="message assistant">
-                  <div className="typing-indicator">
-                    <span />
-                    <span />
-                    <span />
+                  <div className="assistant-progress-inline">
+                    <div className="typing-indicator" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                    <span className="typing-status">{activeProgressLabel}</span>
                   </div>
                 </div>
               </div>
             ) : null}
           </div>
-          {progress ? (
-            <div className="progress-meta">
-              <span>{progress.message}</span>
-              <strong>{progress.progress}%</strong>
-            </div>
-          ) : null}
-          {renderPlan("Execution plan", executionPlan)}
           {renderPlan("Agent TODO plan", todoPlan)}
           <div className="chat-input">
             <div className="chat-input-main">
