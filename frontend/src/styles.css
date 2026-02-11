@@ -349,6 +349,15 @@ body {
   font-size: 13px;
 }
 
+.typing-progress {
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 600;
+  background: #dbeafe;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
 .progress-card {
   background: #0f172a;
   color: #f8fafc;
@@ -536,6 +545,12 @@ body {
   margin: 0;
   font-size: 13px;
   color: #0f172a;
+}
+
+.todo-progress-meta {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: #64748b;
 }
 
 .todo-plan ul {

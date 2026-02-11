@@ -843,6 +843,10 @@ function ChatScreen({ user }) {
 
   const activeProgressLabel = useMemo(() => {
     if (!progress) return "";
+    const currentTodoStep = todoPlan.find((step) => step.status === "in_progress");
+    if (currentTodoStep) {
+      return currentTodoStep.label;
+    }
     const currentStep = executionPlan.find((step) => step.status === "in_progress");
     if (currentStep) {
       return currentStep.label;
@@ -851,10 +855,52 @@ function ChatScreen({ user }) {
       return "Analysis failed";
     }
     return progress.message || "Running analysis";
-  }, [executionPlan, progress]);
+  }, [executionPlan, progress, todoPlan]);
+
+  const activeTodoStep = useMemo(() => {
+    if (!todoPlan.length) return null;
+    return (
+      todoPlan.find((step) => step.status === "in_progress") ||
+      todoPlan.find((step) => step.status === "pending") ||
+      todoPlan[todoPlan.length - 1]
+    );
+  }, [todoPlan]);
+
+  const completedTodoSteps = useMemo(
+    () => todoPlan.filter((step) => step.status === "completed").length,
+    [todoPlan]
+  );
 
   const renderPlan = (title, steps) => {
     if (!steps.length) return null;
+    if (title === "Agent TODO plan") {
+      return (
+        <div className="todo-plan single-item" aria-live="polite">
+          <h3>{title}</h3>
+          <p className="todo-progress-meta">
+            {completedTodoSteps}/{steps.length} completed
+          </p>
+          <ul>
+            <li key={activeTodoStep?.key || "active-step"} className={`todo-step ${activeTodoStep?.status || "pending"}`}>
+              <span className="todo-icon" aria-hidden="true">
+                {activeTodoStep?.status === "completed"
+                  ? "✓"
+                  : activeTodoStep?.status === "in_progress"
+                    ? "⏳"
+                    : activeTodoStep?.status === "failed"
+                      ? "!"
+                      : "○"}
+              </span>
+              <div>
+                <p>{activeTodoStep?.label || "Waiting for next step"}</p>
+                {activeTodoStep?.detail ? <small>{activeTodoStep.detail}</small> : null}
+              </div>
+            </li>
+          </ul>
+        </div>
+      );
+    }
+
     return (
       <div className="todo-plan" aria-live="polite">
         <h3>{title}</h3>
@@ -942,6 +988,9 @@ function ChatScreen({ user }) {
                       <span />
                     </div>
                     <span className="typing-status">{activeProgressLabel}</span>
+                    {typeof progress?.progress === "number" ? (
+                      <span className="typing-progress">{Math.round(progress.progress)}%</span>
+                    ) : null}
                   </div>
                 </div>
               </div>
