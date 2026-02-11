@@ -866,60 +866,12 @@ function ChatScreen({ user }) {
     );
   }, [todoPlan]);
 
-  const completedTodoSteps = useMemo(
-    () => todoPlan.filter((step) => step.status === "completed").length,
-    [todoPlan]
-  );
-
-  const renderPlan = (title, steps) => {
-    if (!steps.length) return null;
-    if (title === "Agent TODO plan") {
-      return (
-        <div className="todo-plan single-item" aria-live="polite">
-          <h3>{title}</h3>
-          <p className="todo-progress-meta">
-            {completedTodoSteps}/{steps.length} completed
-          </p>
-          <ul>
-            <li key={activeTodoStep?.key || "active-step"} className={`todo-step ${activeTodoStep?.status || "pending"}`}>
-              <span className="todo-icon" aria-hidden="true">
-                {activeTodoStep?.status === "completed"
-                  ? "✓"
-                  : activeTodoStep?.status === "in_progress"
-                    ? "⏳"
-                    : activeTodoStep?.status === "failed"
-                      ? "!"
-                      : "○"}
-              </span>
-              <div>
-                <p>{activeTodoStep?.label || "Waiting for next step"}</p>
-                {activeTodoStep?.detail ? <small>{activeTodoStep.detail}</small> : null}
-              </div>
-            </li>
-          </ul>
-        </div>
-      );
+  const inlineTaskLabel = useMemo(() => {
+    if (activeTodoStep?.label) {
+      return `Working on ${activeTodoStep.label}`;
     }
-
-    return (
-      <div className="todo-plan" aria-live="polite">
-        <h3>{title}</h3>
-        <ul>
-          {steps.map((step) => (
-            <li key={step.key} className={`todo-step ${step.status}`}>
-              <span className="todo-icon" aria-hidden="true">
-                {step.status === "completed" ? "✓" : step.status === "in_progress" ? "⏳" : step.status === "failed" ? "!" : "○"}
-              </span>
-              <div>
-                <p>{step.label}</p>
-                {step.detail ? <small>{step.detail}</small> : null}
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
-    );
-  };
+    return activeProgressLabel;
+  }, [activeProgressLabel, activeTodoStep]);
 
   return (
     <div className="chat-layout">
@@ -987,7 +939,7 @@ function ChatScreen({ user }) {
                       <span />
                       <span />
                     </div>
-                    <span className="typing-status">{activeProgressLabel}</span>
+                    <span className="typing-status">{inlineTaskLabel}</span>
                     {typeof progress?.progress === "number" ? (
                       <span className="typing-progress">{Math.round(progress.progress)}%</span>
                     ) : null}
@@ -996,7 +948,6 @@ function ChatScreen({ user }) {
               </div>
             ) : null}
           </div>
-          {renderPlan("Agent TODO plan", todoPlan)}
           <div className="chat-input">
             <div className="chat-input-main">
               <textarea
