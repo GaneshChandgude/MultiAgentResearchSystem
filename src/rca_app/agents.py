@@ -1122,7 +1122,10 @@ def build_agents(config: AppConfig, store, checkpointer):
 
     router_tools = [*shared_router_tools]
     if config.use_dynamic_subagent_flow:
+        # Keep legacy analysis tools available so the orchestration model can
+        # discover and pass concrete tool names when delegating via run_subagent.
         router_tools.extend(dynamic_tools)
+        router_tools.extend(legacy_tools)
     else:
         router_tools.extend(legacy_tools)
     router_tools.append(force_todo_update)
