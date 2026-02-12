@@ -342,13 +342,7 @@ Use available tools to gather evidence, reason about it, and return structured f
 Rules:
 1. Keep to the assigned objective and boundaries.
 2. If tools are available, use them before making claims.
-3. Return ONLY valid JSON with exactly these keys:
-{
-  "findings": ["string"],
-  "confidence": "low | medium | high",
-  "gaps": ["string"],
-  "suggested_followups": ["string"]
-}
+3. Return ONLY valid JSON that strictly follows the required output schema.
 4. No markdown or commentary outside JSON.
 
 Dynamic Input:
