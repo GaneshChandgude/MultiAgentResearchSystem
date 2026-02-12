@@ -40,7 +40,8 @@ const emptyConfig = {
     model_guardrails_enabled: true,
     model_guardrails_moderation_enabled: true,
     model_guardrails_output_language: "English",
-    model_input_guardrail_rules: []
+    model_input_guardrail_rules: [],
+    use_dynamic_subagent_flow: true
   }
 };
 
@@ -481,6 +482,18 @@ function ConfigWizard({ config, setConfig, user, initialKey, onClose }) {
               <option value="full">full</option>
               <option value="nested">nested</option>
               <option value="off">off</option>
+            </select>
+          </div>
+          <div className="input-group">
+            <label>Agent orchestration flow</label>
+            <select
+              value={config.guardrails.use_dynamic_subagent_flow ? "dynamic" : "legacy"}
+              onChange={(event) =>
+                updateField("guardrails", "use_dynamic_subagent_flow", event.target.value === "dynamic")
+              }
+            >
+              <option value="dynamic">Dynamic subagent flow (default)</option>
+              <option value="legacy">Legacy fixed specialist flow</option>
             </select>
           </div>
           <div className="input-group">

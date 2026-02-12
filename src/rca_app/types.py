@@ -16,4 +16,8 @@ class RCAState(TypedDict):
     todo_progress: NotRequired[Dict[str, Any]]
 
 
+# Domain-agnostic alias used by the orchestrator/subagent runtime.
+analysisState = RCAState
+
+
 logger.debug("RCAState typing loaded")

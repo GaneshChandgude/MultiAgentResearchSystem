@@ -126,6 +126,7 @@ class GuardrailsConfigRequest(BaseModel):
     model_guardrails_moderation_enabled: bool
     model_guardrails_output_language: str
     model_input_guardrail_rules: list[ModelInputGuardrailRule] = Field(default_factory=list)
+    use_dynamic_subagent_flow: bool = True
 
 
 class ChatStartRequest(BaseModel):
@@ -705,6 +706,7 @@ async def config_defaults() -> ConfigResponse:
             "model_guardrails_moderation_enabled": base.model_guardrails_moderation_enabled,
             "model_guardrails_output_language": base.model_guardrails_output_language,
             "model_input_guardrail_rules": base.model_input_guardrail_rules,
+            "use_dynamic_subagent_flow": base.use_dynamic_subagent_flow,
         },
     )
 
