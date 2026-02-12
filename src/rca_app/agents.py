@@ -812,17 +812,13 @@ def build_dynamic_subagent_tool(
             - task (str): full instructions for the subagent
             - user_id (str): user/session id
             - query_id (str): query/thread id
-            - output_schema (str): JSON schema or shape the subagent must return
-            - tool_names (List[str] | None): optional subset of tool names
+            - output_schema (str): required JSON output shape the subagent must return
+            - tool_names (List[str] | None): optional subset of tool names; if omitted
+              or unresolved, all registered domain tools are used
 
         Output:
-            - dict:
-                - objective
-                - findings
-                - confidence
-                - gaps
-                - suggested_followups
-                - tool_names_used
+            - dict with parsed JSON fields from `output_schema`, plus
+              `objective` and `tool_names_used`
         """
         selected_tools: List[Any] = []
         selected_tool_names: List[str] = []
@@ -835,7 +831,10 @@ def build_dynamic_subagent_tool(
                     continue
                 selected_tools.append(tool_obj)
                 selected_tool_names.append(tool_name)
-        else:
+
+        # Fallback: if no tools were resolved (tool_names missing/empty/invalid),
+        # attach all registered domain tools so capable subtasks are not starved.
+        if not selected_tools:
             selected_tools = tool_registry.all_tools()
             selected_tool_names = [getattr(t, "name", "unknown") for t in selected_tools]
 
