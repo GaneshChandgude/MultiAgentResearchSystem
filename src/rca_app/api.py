@@ -225,9 +225,9 @@ def _run_job(job_id: str, user_id: str, query: str) -> None:
     try:
         store.update_job(job_id, status="running", progress=15, message="Loading configuration")
         config = _build_user_config(user_id)
-        store.update_job(job_id, status="running", progress=35, message="Initializing RCA agents")
+        store.update_job(job_id, status="running", progress=35, message="Preparing analysis agents")
         rca_app = _get_rca_app(config)
-        store.update_job(job_id, status="running", progress=60, message="Running root cause analysis")
+        store.update_job(job_id, status="running", progress=60, message="Performing analysis")
         result = run_rca(
             rca_app,
             query,
@@ -561,8 +561,8 @@ def _build_progress_plan(job: Dict[str, Any]) -> Dict[str, Any]:
     steps = [
         {"key": "queued", "label": "Queued and validated", "start": 0, "end": 15},
         {"key": "config", "label": "Loading configuration", "start": 15, "end": 35},
-        {"key": "agents", "label": "Initializing RCA agents", "start": 35, "end": 60},
-        {"key": "analysis", "label": "Running root cause analysis", "start": 60, "end": 85},
+        {"key": "agents", "label": "Preparing analysis agents", "start": 35, "end": 60},
+        {"key": "analysis", "label": "Performing analysis", "start": 60, "end": 85},
         {"key": "response", "label": "Assembling final response", "start": 85, "end": 100},
     ]
 
