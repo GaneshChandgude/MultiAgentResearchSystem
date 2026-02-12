@@ -906,12 +906,16 @@ def build_dynamic_subagent_tool(
                 },
             )
 
+        if not isinstance(response, dict):
+            logger.warning(
+                "Subagent response was non-dict JSON (type=%s); coercing into payload",
+                type(response).__name__,
+            )
+            response = {"result": response}
+
         return {
+            **response,
             "objective": objective,
-            "findings": response.get("findings"),
-            "confidence": response.get("confidence"),
-            "gaps": response.get("gaps"),
-            "suggested_followups": response.get("suggested_followups"),
             "tool_names_used": selected_tool_names,
         }
 
