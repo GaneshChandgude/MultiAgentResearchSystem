@@ -21,7 +21,7 @@ from .memory import (
 from .observability import build_langfuse_invoke_config
 from .toolset_registry import ToolsetRegistry
 from .toolsets import build_salesforce_toolset, build_sap_business_one_toolset
-from .types import RCAState
+from .types import analysisState
 from .utils import (
     filter_tool_messages,
     handle_tool_errors,
@@ -83,10 +83,10 @@ def build_hypothesis_tool(config: AppConfig, store, checkpointer, llm):
     def hypothesis_agent_tool(task: str, user_id: str, query_id: str, memory_context: str) -> Dict[str, Any]:
         """
         Purpose:
-            Generate multiple plausible root-cause hypotheses for a given RCA query.
+            Generate multiple plausible hypotheses for a given query.
 
         When to use:
-            Use this tool when an RCA investigation requires enumerating
+            Use this tool when an investigation requires enumerating
             possible causes of an observed problem. This is typically
             the first analytical step after query routing.
 
@@ -98,7 +98,7 @@ def build_hypothesis_tool(config: AppConfig, store, checkpointer, llm):
 
         Output:
             - dict: Contains updated fields:
-                - "hypotheses" (List[str]): Newly generated root-cause hypotheses.
+                - "hypotheses" (List[str]): Newly generated hypotheses.
 
         Notes:
             - Hypotheses are returned as plain strings with no categorization.
@@ -192,7 +192,7 @@ def build_sales_analysis_tool(config: AppConfig, store, checkpointer, llm, sales
         """
         Purpose:
             Analyze sales and promotion data to evaluate hypotheses that may
-            explain observed issues in an RCA investigation.
+            explain observed issues in an analysis investigation.
 
         When to use:
             Use this tool after hypotheses have been generated and when
@@ -201,14 +201,14 @@ def build_sales_analysis_tool(config: AppConfig, store, checkpointer, llm, sales
 
         Inputs:
             - task (str):
-                The resolved RCA task or problem statement to analyze.
+                The resolved task or problem statement to analyze.
             - hypotheses (List[str]):
-                A list of candidate root-cause hypotheses to be validated
+                A list of candidate hypotheses to be validated
                 from a sales perspective.
             - user_id (str):
                 Identifier for the user or session, used for scoped memory access.
             - query_id (str):
-                Unique identifier for the current RCA query or thread.
+                Unique identifier for the current query or thread.
             - memory_context (str): episodic + conversation memory
 
         Output:
@@ -220,7 +220,7 @@ def build_sales_analysis_tool(config: AppConfig, store, checkpointer, llm, sales
         Notes:
             - This tool may call sales and promotion data tools as needed.
             - The output is strictly structured and intended for downstream
-              RCA agents or summarization steps.
+              analysis agents or summarization steps.
             - The tool does not mutate external state.
         """
         logger.debug(
@@ -332,7 +332,7 @@ def build_inventory_analysis_tool(
         """
         Purpose:
             Analyze inventory movements, replenishments, transfers, and
-            adjustments to validate inventory-related RCA hypotheses.
+            adjustments to validate inventory-related hypotheses.
 
         When to use:
             Use this tool when stock availability, shrinkage, replenishment
@@ -340,7 +340,7 @@ def build_inventory_analysis_tool(
             the observed problem.
 
         Inputs:
-            - task (str): Resolved RCA task or problem statement
+            - task (str): Resolved task or problem statement
             - hypotheses (List[str]): Candidate hypotheses to validate
             - user_id (str): User/session identifier for scoped memory access
             - query_id (str): Query/thread identifier
@@ -461,7 +461,7 @@ def build_validation_tool(config: AppConfig, store, checkpointer, llm):
         """
         Purpose:
             Validate each hypothesis by cross-referencing sales and inventory
-            insights gathered during the RCA investigation.
+            insights gathered during the analysis investigation.
 
         When to use:
             Use this tool after domain-specific analysis tools (e.g., Sales,
@@ -582,9 +582,9 @@ def build_root_cause_tool(config: AppConfig, store, checkpointer, llm):
     ) -> Dict[str, Any]:
         """
         Purpose:
-            Produce the final Root Cause Analysis by synthesizing validated
+            Produce the final analysis output by synthesizing validated
             hypotheses, sales insights, and inventory insights into a
-            structured RCA outcome.
+            structured outcome.
 
         When to use:
             Use this tool after hypothesis validation has been completed.
@@ -598,8 +598,8 @@ def build_root_cause_tool(config: AppConfig, store, checkpointer, llm):
 
         Output:
             - dict:
-                - "root_cause": Final structured RCA
-                - "reasoning": Explanation of RCA decisions
+                - "root_cause": Final structured result
+                - "reasoning": Explanation of decisions
         """
         logger.debug(
             "Root cause tool invoked user_id=%s query_id=%s validated_hypotheses=%s",
@@ -693,7 +693,7 @@ def build_report_tool(config: AppConfig, store, checkpointer, llm):
             Produce the final human-readable report.
 
         When to use:
-            Use this tool as the final step of an RCA workflow to generate a
+            Use this tool as the final step of a workflow to generate a
             human-readable report.
 
         Inputs:
@@ -704,7 +704,7 @@ def build_report_tool(config: AppConfig, store, checkpointer, llm):
 
         Output:
             - dict:
-                - "report_text": Human-readable RCA report
+                - "report_text": Human-readable report
         """
         logger.debug(
             "Report tool invoked user_id=%s query_id=%s",
@@ -722,7 +722,7 @@ def build_report_tool(config: AppConfig, store, checkpointer, llm):
             {
                 "role": "user",
                 "content": f"""
-Use the following structured RCA output:
+Use the following structured output:
 
 {root_cause}
 {reasoning}
@@ -751,7 +751,7 @@ Use the following structured RCA output:
                 user_id=str(user_id),
                 query_id=str(query_id),
                 trace_entry={
-                    "agent": "RCAReportAgent",
+                    "agent": "ReportAgent",
                     "step": "Generated final report",
                     "report_preview": report_text[:500],
                 },
@@ -782,8 +782,205 @@ def build_router_agent(config: AppConfig, store, checkpointer, llm, tools):
     )
 
 
+def build_dynamic_subagent_tool(
+    config: AppConfig,
+    store,
+    checkpointer,
+    llm,
+    tool_registry: ToolsetRegistry,
+):
+    @tool
+    def run_subagent(
+        objective: str,
+        task: str,
+        user_id: str,
+        query_id: str,
+        output_schema: str,
+        tool_names: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Purpose:
+            Dynamically create and run a specialist subagent for a focused
+            research objective.
+
+        When to use:
+            Use this tool when the orchestration agent wants to delegate a
+            clearly-scoped investigation to a parallel worker agent.
+
+        Inputs:
+            - objective (str): concise subagent goal
+            - task (str): full instructions for the subagent
+            - user_id (str): user/session id
+            - query_id (str): query/thread id
+            - output_schema (str): JSON schema or shape the subagent must return
+            - tool_names (List[str] | None): optional subset of tool names
+
+        Output:
+            - dict:
+                - objective
+                - findings
+                - confidence
+                - gaps
+                - suggested_followups
+                - tool_names_used
+        """
+        selected_tools: List[Any] = []
+        selected_tool_names: List[str] = []
+        if tool_names:
+            for tool_name in tool_names:
+                try:
+                    tool_obj = tool_registry.find_tool(tool_name)
+                except KeyError:
+                    logger.warning("Subagent requested unknown tool '%s'", tool_name)
+                    continue
+                selected_tools.append(tool_obj)
+                selected_tool_names.append(tool_name)
+        else:
+            selected_tools = tool_registry.all_tools()
+            selected_tool_names = [getattr(t, "name", "unknown") for t in selected_tools]
+
+        selected_tools += [
+            create_manage_memory_tool(namespace=("subagent", "{user_id}")),
+            create_search_memory_tool(namespace=("subagent", "{user_id}")),
+        ]
+
+        subagent = create_agent(
+            model=llm,
+            tools=selected_tools,
+            middleware=build_agent_middleware(
+                config,
+                include_pii=config.nested_agent_pii_profile != "off",
+                pii_profile=config.nested_agent_pii_profile,
+            ),
+            store=store,
+            checkpointer=checkpointer,
+        )
+
+        system_prompt = render_prompt(
+            config,
+            name="rca.subagent.system",
+            fallback=PROMPT_DEFINITIONS["rca.subagent.system"],
+            variables={
+                "objective": objective,
+                "output_schema": output_schema,
+            },
+        )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": task},
+        ]
+
+        observability_config = build_langfuse_invoke_config(
+            config,
+            user_id=user_id,
+            query_id=query_id,
+            tags=["DynamicSubagent"],
+            metadata={
+                "agent": "DynamicSubagent",
+                "objective": objective,
+                "task_length": len(task),
+                "tool_count": len(selected_tool_names),
+            },
+        )
+        tool_config = {
+            "configurable": {"user_id": user_id, "thread_id": user_id},
+            **observability_config,
+        }
+
+        result = subagent.invoke({"messages": messages}, tool_config)
+        final_msg = result["messages"][-1].content
+        response = process_response(final_msg, llm=llm, app_config=config)
+
+        internal_msgs = result["messages"][2:-1]
+        tool_call_msgs = filter_tool_messages(internal_msgs)
+        if user_id and query_id:
+            persist_agent_trace(
+                store,
+                user_id=str(user_id),
+                query_id=str(query_id),
+                trace_entry={
+                    "agent": "DynamicSubagent",
+                    "step": f"Objective: {objective}",
+                    "tool_names_used": selected_tool_names,
+                    "calls": serialize_messages(tool_call_msgs),
+                    "result": response,
+                },
+            )
+
+        return {
+            "objective": objective,
+            "findings": response.get("findings"),
+            "confidence": response.get("confidence"),
+            "gaps": response.get("gaps"),
+            "suggested_followups": response.get("suggested_followups"),
+            "tool_names_used": selected_tool_names,
+        }
+
+    return run_subagent
+
+
+def build_citation_tool(config: AppConfig, store, checkpointer, llm):
+    citation_agent = create_agent(
+        model=llm,
+        tools=[],
+        middleware=build_agent_middleware(
+            config,
+            include_pii=config.nested_agent_pii_profile != "off",
+            pii_profile=config.nested_agent_pii_profile,
+        ),
+        store=store,
+        checkpointer=checkpointer,
+    )
+
+    @tool
+    def citation_agent_tool(report: str, sources: List[str], user_id: str, query_id: str) -> Dict[str, Any]:
+        """
+        Purpose:
+            Attach explicit source references to a synthesized research report.
+        """
+        system_prompt = render_prompt(
+            config,
+            name="rca.citation.system",
+            fallback=PROMPT_DEFINITIONS["rca.citation.system"],
+            variables={},
+        )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": f"""
+Report draft:
+{report}
+
+Sources:
+{sources}
+""",
+            },
+        ]
+        observability_config = build_langfuse_invoke_config(
+            config,
+            user_id=user_id,
+            query_id=query_id,
+            tags=["CitationAgent"],
+            metadata={"agent": "CitationAgent", "source_count": len(sources)},
+        )
+        tool_config = {
+            "configurable": {"user_id": user_id, "thread_id": user_id},
+            **observability_config,
+        }
+        result = citation_agent.invoke({"messages": messages}, tool_config)
+        final_msg = result["messages"][-1].content
+        response = process_response(final_msg, llm=llm, app_config=config)
+        return {
+            "report_with_citations": response.get("report_with_citations", report),
+            "citation_map": response.get("citation_map", {}),
+        }
+
+    return citation_agent_tool
+
+
 def orchestration_agent(
-    rca_state: RCAState,
+    rca_state: analysisState,
     config: Dict[str, Any],
     store,
     router_agent,
@@ -794,7 +991,7 @@ def orchestration_agent(
     user_id = configurable.get("user_id")
     if not rca_state.get("history"):
         rca_state["history"] = []
-        logger.debug("Initialized empty history in RCA state")
+        logger.debug("Initialized empty history in analysis state")
 
     memory_context = build_memory_augmented_prompt(
         query=rca_state["task"],
@@ -869,15 +1066,28 @@ def orchestration_agent(
 
 
 def build_agents(config: AppConfig, store, checkpointer):
-    logger.info("Initializing RCA agents")
+    logger.info("Initializing orchestrator/subagent agents")
     planning_llm = get_planning_llm_model(config)
     specialist_llm = get_specialist_llm_model(config)
     parallel_specialist_llm = specialist_llm.bind(parallel_tool_calls=True)
-    hypothesis_tool = build_hypothesis_tool(config, store, checkpointer, parallel_specialist_llm)
+
     salesforce_toolset = build_salesforce_toolset(config)
     sap_toolset = build_sap_business_one_toolset(config)
     tool_registry = ToolsetRegistry([salesforce_toolset, sap_toolset])
-    sales_tool, sales_tools = build_sales_analysis_tool(
+
+    # New dynamic delegation flow (default)
+    subagent_tool = build_dynamic_subagent_tool(
+        config,
+        store,
+        checkpointer,
+        parallel_specialist_llm,
+        tool_registry,
+    )
+    citation_tool = build_citation_tool(config, store, checkpointer, parallel_specialist_llm)
+
+    # Legacy fixed specialist flow (kept for compatibility via toggle)
+    hypothesis_tool = build_hypothesis_tool(config, store, checkpointer, parallel_specialist_llm)
+    sales_tool, _ = build_sales_analysis_tool(
         config, store, checkpointer, parallel_specialist_llm, salesforce_toolset.tools
     )
     try:
@@ -891,24 +1101,32 @@ def build_agents(config: AppConfig, store, checkpointer):
     root_cause_tool = build_root_cause_tool(config, store, checkpointer, parallel_specialist_llm)
     report_tool = build_report_tool(config, store, checkpointer, parallel_specialist_llm)
 
-
-
     @tool
     def force_todo_update(reason: str) -> str:
         """Call after tools to update todos."""
         return f"force_todo_update triggered: {reason}"
 
-    router_tools = [
+    shared_router_tools = [
         create_search_memory_tool(namespace=("orchestration", "{user_id}")),
         create_manage_memory_tool(namespace=("orchestration", "{user_id}")),
+    ]
+
+    dynamic_tools = [subagent_tool, citation_tool]
+    legacy_tools = [
         hypothesis_tool,
         sales_tool,
         inventory_tool,
         validation_tool,
         root_cause_tool,
         report_tool,
-        force_todo_update,
     ]
+
+    router_tools = [*shared_router_tools]
+    if config.use_dynamic_subagent_flow:
+        router_tools.extend(dynamic_tools)
+    else:
+        router_tools.extend(legacy_tools)
+    router_tools.append(force_todo_update)
 
     router_agent = build_router_agent(config, store, checkpointer, planning_llm, router_tools)
 
@@ -918,6 +1136,8 @@ def build_agents(config: AppConfig, store, checkpointer):
         "specialist_llm": parallel_specialist_llm,
         "router_agent": router_agent,
         "tools": {
+            "run_subagent": subagent_tool,
+            "citation": citation_tool,
             "hypothesis": hypothesis_tool,
             "sales": sales_tool,
             "inventory": inventory_tool,
