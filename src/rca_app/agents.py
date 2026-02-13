@@ -1086,7 +1086,9 @@ def build_agents(config: AppConfig, store, checkpointer):
         parallel_specialist_llm,
         tool_registry,
     )
-    citation_tool = build_citation_tool(config, store, checkpointer, parallel_specialist_llm)
+    # Keep no-tool specialist agents on the base model. OpenAI rejects
+    # `parallel_tool_calls` when no tools are supplied for a request.
+    citation_tool = build_citation_tool(config, store, checkpointer, specialist_llm)
 
     # Legacy fixed specialist flow (kept for compatibility via toggle)
     hypothesis_tool = build_hypothesis_tool(config, store, checkpointer, parallel_specialist_llm)
@@ -1101,8 +1103,8 @@ def build_agents(config: AppConfig, store, checkpointer):
         config, store, checkpointer, parallel_specialist_llm, sap_toolset.tools, promo_tool
     )
     validation_tool = build_validation_tool(config, store, checkpointer, parallel_specialist_llm)
-    root_cause_tool = build_root_cause_tool(config, store, checkpointer, parallel_specialist_llm)
-    report_tool = build_report_tool(config, store, checkpointer, parallel_specialist_llm)
+    root_cause_tool = build_root_cause_tool(config, store, checkpointer, specialist_llm)
+    report_tool = build_report_tool(config, store, checkpointer, specialist_llm)
 
     @tool
     def force_todo_update(reason: str) -> str:
@@ -1126,10 +1128,7 @@ def build_agents(config: AppConfig, store, checkpointer):
 
     router_tools = [*shared_router_tools]
     if config.use_dynamic_subagent_flow:
-        # Keep legacy analysis tools available so the orchestration model can
-        # discover and pass concrete tool names when delegating via run_subagent.
         router_tools.extend(dynamic_tools)
-        router_tools.extend(legacy_tools)
     else:
         router_tools.extend(legacy_tools)
     router_tools.append(force_todo_update)
@@ -1139,7 +1138,7 @@ def build_agents(config: AppConfig, store, checkpointer):
     return {
         "llm": planning_llm,
         "planning_llm": planning_llm,
-        "specialist_llm": parallel_specialist_llm,
+        "specialist_llm": specialist_llm,
         "router_agent": router_agent,
         "tools": {
             "run_subagent": subagent_tool,
