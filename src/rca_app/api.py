@@ -38,6 +38,11 @@ app.add_middleware(
 @app.on_event("startup")
 async def _configure_api_logging() -> None:
     configure_logging()
+    try:
+        _generate_assistant_capabilities_once()
+        logger.info("Shared assistant capabilities ready")
+    except Exception:
+        logger.exception("Failed to precompute shared assistant capabilities at startup")
 
 _base_config = load_config()
 client = httpx.Client(verify=False)
@@ -60,6 +65,7 @@ register_todo_progress_sink(
 _app_cache: Dict[str, Any] = {}
 _session_cache: Dict[str, Dict[str, Any]] = {}
 _pending_persistence: set[str] = set()
+_SHARED_CAPABILITIES_PROFILE_ID = "__shared_capabilities__"
 
 
 class LoginRequest(BaseModel):
@@ -185,6 +191,11 @@ def _get_rca_app(config: AppConfig):
         logger.info("Building RCA app for config hash=%s", hash(key))
         _app_cache[key] = build_app(config)
     return _app_cache[key]
+
+
+def _build_shared_capabilities_config() -> AppConfig:
+    """Build a deterministic config for shared capabilities discovery."""
+    return _base_config
 
 
 def _persist_memories(user_id: str) -> None:
@@ -319,9 +330,9 @@ def _parse_capabilities_payload(output: str) -> tuple[str | None, list[str]]:
     return text, sample_queries
 
 
-def _generate_assistant_capabilities_once(user_id: str) -> tuple[str | None, list[str], bool]:
-    existing = store.get_assistant_capabilities(user_id)
-    existing_queries = store.get_assistant_sample_queries(user_id)
+def _generate_assistant_capabilities_once() -> tuple[str | None, list[str], bool]:
+    existing = store.get_assistant_capabilities(_SHARED_CAPABILITIES_PROFILE_ID)
+    existing_queries = store.get_assistant_sample_queries(_SHARED_CAPABILITIES_PROFILE_ID)
     if existing:
         return existing, existing_queries, False
 
@@ -331,20 +342,31 @@ def _generate_assistant_capabilities_once(user_id: str) -> tuple[str | None, lis
         "Capabilities should explain how you help users, how you coordinate specialist agents/tools, and what "
         "style of reasoning users should expect."
     )
-    config = _build_user_config(user_id)
+    config = _build_shared_capabilities_config()
     rca_app = _get_rca_app(config)
     result = run_rca(
         rca_app,
         capability_query,
-        user_id=user_id,
-        query_id=f"capabilities-{user_id}",
+        user_id=_SHARED_CAPABILITIES_PROFILE_ID,
+        query_id="capabilities-startup",
     )
     guarded_output = apply_output_guardrails(result.get("output", ""), config=config).strip()
     capabilities, sample_queries = _parse_capabilities_payload(guarded_output)
     if not capabilities:
         return None, [], False
-    store.upsert_assistant_capabilities(user_id, capabilities, sample_queries)
+    store.upsert_assistant_capabilities(
+        _SHARED_CAPABILITIES_PROFILE_ID,
+        capabilities,
+        sample_queries,
+    )
     return capabilities, sample_queries, True
+
+
+def _load_shared_assistant_capabilities() -> tuple[str | None, list[str]]:
+    return (
+        store.get_assistant_capabilities(_SHARED_CAPABILITIES_PROFILE_ID),
+        store.get_assistant_sample_queries(_SHARED_CAPABILITIES_PROFILE_ID),
+    )
 
 
 def _extract_todos_from_tool_content(content: Any) -> list[Dict[str, Any]]:
@@ -790,12 +812,11 @@ async def list_chats(user_id: str) -> Dict[str, Any]:
 @app.get("/api/capabilities/{user_id}", response_model=CapabilitiesResponse)
 @observe()
 async def get_assistant_capabilities(user_id: str, generate: bool = False) -> CapabilitiesResponse:
-    capabilities = store.get_assistant_capabilities(user_id)
-    sample_queries = store.get_assistant_sample_queries(user_id)
+    capabilities, sample_queries = _load_shared_assistant_capabilities()
     generated = False
     if not capabilities and generate:
         try:
-            capabilities, sample_queries, generated = _generate_assistant_capabilities_once(user_id)
+            capabilities, sample_queries, generated = _generate_assistant_capabilities_once()
         except Exception:
             logger.exception("Failed generating assistant capabilities for user_id=%s", user_id)
     return CapabilitiesResponse(
