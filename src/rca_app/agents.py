@@ -1116,7 +1116,11 @@ def build_agents(config: AppConfig, store, checkpointer):
         create_manage_memory_tool(namespace=("orchestration", "{user_id}")),
     ]
 
-    dynamic_tools = [subagent_tool, citation_tool]
+    dynamic_tools = [
+        subagent_tool,
+        citation_tool,
+        *tool_registry.all_tools(),
+    ]
     legacy_tools = [
         hypothesis_tool,
         sales_tool,
@@ -1140,6 +1144,7 @@ def build_agents(config: AppConfig, store, checkpointer):
         "planning_llm": planning_llm,
         "specialist_llm": specialist_llm,
         "router_agent": router_agent,
+        "tool_registry": tool_registry,
         "tools": {
             "run_subagent": subagent_tool,
             "citation": citation_tool,
