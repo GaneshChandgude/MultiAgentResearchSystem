@@ -1185,18 +1185,7 @@ def build_agents(config: AppConfig, store, checkpointer):
     # user-registered MCP server tools.
     tool_registry = ToolsetRegistry(user_mcp_toolsets)
 
-    salesforce_tools = []
-    sap_tools = []
-    try:
-        salesforce_tools = tool_registry.get_toolset("salesforce").tools
-    except KeyError:
-        logger.info("Salesforce toolset not present in user MCP toolsets")
-    try:
-        sap_tools = tool_registry.get_toolset("sap-business-one").tools
-    except KeyError:
-        logger.info("SAP Business One toolset not present in user MCP toolsets")
-
-    # New dynamic delegation flow (default)
+    # Dynamic delegation flow
     subagent_tool = build_dynamic_subagent_tool(
         config,
         store,
@@ -1207,22 +1196,6 @@ def build_agents(config: AppConfig, store, checkpointer):
     # Keep no-tool specialist agents on the base model. OpenAI rejects
     # `parallel_tool_calls` when no tools are supplied for a request.
     citation_tool = build_citation_tool(config, store, checkpointer, specialist_llm)
-
-    # Legacy fixed specialist flow (kept for compatibility via toggle)
-    hypothesis_tool = build_hypothesis_tool(config, store, checkpointer, parallel_specialist_llm)
-    sales_tool, _ = build_sales_analysis_tool(
-        config, store, checkpointer, parallel_specialist_llm, salesforce_tools
-    )
-    try:
-        promo_tool = tool_registry.find_tool("get_promo_period")
-    except KeyError:
-        promo_tool = None
-    inventory_tool = build_inventory_analysis_tool(
-        config, store, checkpointer, parallel_specialist_llm, sap_tools, promo_tool
-    )
-    validation_tool = build_validation_tool(config, store, checkpointer, parallel_specialist_llm)
-    root_cause_tool = build_root_cause_tool(config, store, checkpointer, specialist_llm)
-    report_tool = build_report_tool(config, store, checkpointer, specialist_llm)
 
     @tool
     def force_todo_update(reason: str) -> str:
@@ -1239,20 +1212,7 @@ def build_agents(config: AppConfig, store, checkpointer):
         citation_tool,
         *tool_registry.all_tools(),
     ]
-    legacy_tools = [
-        hypothesis_tool,
-        sales_tool,
-        inventory_tool,
-        validation_tool,
-        root_cause_tool,
-        report_tool,
-    ]
-
-    router_tools = [*shared_router_tools]
-    if config.use_dynamic_subagent_flow:
-        router_tools.extend(dynamic_tools)
-    else:
-        router_tools.extend(legacy_tools)
+    router_tools = [*shared_router_tools, *dynamic_tools]
     router_tools.append(force_todo_update)
 
     router_agent = build_router_agent(config, store, checkpointer, planning_llm, router_tools)
@@ -1266,11 +1226,5 @@ def build_agents(config: AppConfig, store, checkpointer):
         "tools": {
             "run_subagent": subagent_tool,
             "citation": citation_tool,
-            "hypothesis": hypothesis_tool,
-            "sales": sales_tool,
-            "inventory": inventory_tool,
-            "validation": validation_tool,
-            "root_cause": root_cause_tool,
-            "report": report_tool,
         },
     }

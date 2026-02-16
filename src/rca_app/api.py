@@ -140,9 +140,6 @@ class GuardrailsConfigRequest(BaseModel):
     model_guardrails_moderation_enabled: bool
     model_guardrails_output_language: str
     model_input_guardrail_rules: list[ModelInputGuardrailRule] = Field(default_factory=list)
-    use_dynamic_subagent_flow: bool = True
-
-
 
 
 class MCPServerConfigRequest(BaseModel):
@@ -204,6 +201,8 @@ def _build_user_config(user_id: str) -> AppConfig:
     updates.update({k: v for k, v in embedder.items() if v})
     updates.update(langfuse_overrides)
     updates.update(guardrails)
+    valid_fields = set(AppConfig.__dataclass_fields__.keys())
+    updates = {key: value for key, value in updates.items() if key in valid_fields}
     if isinstance(mcp_servers, dict):
         server_entries = mcp_servers.get("servers")
         if isinstance(server_entries, list):
@@ -762,7 +761,6 @@ async def config_defaults() -> ConfigResponse:
             "model_guardrails_moderation_enabled": base.model_guardrails_moderation_enabled,
             "model_guardrails_output_language": base.model_guardrails_output_language,
             "model_input_guardrail_rules": base.model_input_guardrail_rules,
-            "use_dynamic_subagent_flow": base.use_dynamic_subagent_flow,
         },
         mcp_servers={"servers": base.mcp_servers},
     )
