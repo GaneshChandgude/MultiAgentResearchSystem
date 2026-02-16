@@ -237,6 +237,11 @@ def main(argv: list[str] | None = None):
     )
     sap_parser.add_argument("--host", default="0.0.0.0")
     sap_parser.add_argument("--port", type=int, default=8700)
+    supply_chain_parser = subparsers.add_parser(
+        "mcp-supply-chain", help="Run Supply Chain specialist MCP SSE server"
+    )
+    supply_chain_parser.add_argument("--host", default="0.0.0.0")
+    supply_chain_parser.add_argument("--port", type=int, default=8800)
     prompt_parser = subparsers.add_parser(
         "sync-langfuse-prompts", help="Create Langfuse prompts if missing"
     )
@@ -288,6 +293,11 @@ def main(argv: list[str] | None = None):
         from .mcp_servers import run_sap_business_one_mcp
 
         run_sap_business_one_mcp(load_config(), host=args.host, port=args.port)
+        return 0
+    if args.command == "mcp-supply-chain":
+        from .mcp_servers import run_supply_chain_mcp
+
+        run_supply_chain_mcp(load_config(), host=args.host, port=args.port)
         return 0
     if args.command == "sync-langfuse-prompts":
         config = load_config()
