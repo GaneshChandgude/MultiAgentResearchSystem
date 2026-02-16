@@ -20,7 +20,7 @@ from .memory import (
 )
 from .observability import build_langfuse_invoke_config
 from .toolset_registry import ToolsetRegistry
-from .toolsets import build_salesforce_toolset, build_sap_business_one_toolset, build_user_mcp_toolsets
+from .toolsets import build_user_mcp_toolsets
 from .types import analysisState
 from .utils import (
     filter_tool_messages,
@@ -1074,12 +1074,21 @@ def build_agents(config: AppConfig, store, checkpointer):
     specialist_llm = get_specialist_llm_model(config)
     parallel_specialist_llm = specialist_llm.bind(parallel_tool_calls=True)
 
-    salesforce_toolset = build_salesforce_toolset(config)
-    sap_toolset = build_sap_business_one_toolset(config)
     user_mcp_toolsets = build_user_mcp_toolsets(config)
     # Registry is used for dynamic tool discovery and should only contain
     # user-registered MCP server tools.
     tool_registry = ToolsetRegistry(user_mcp_toolsets)
+
+    salesforce_tools = []
+    sap_tools = []
+    try:
+        salesforce_tools = tool_registry.get_toolset("salesforce").tools
+    except KeyError:
+        logger.info("Salesforce toolset not present in user MCP toolsets")
+    try:
+        sap_tools = tool_registry.get_toolset("sap-business-one").tools
+    except KeyError:
+        logger.info("SAP Business One toolset not present in user MCP toolsets")
 
     # New dynamic delegation flow (default)
     subagent_tool = build_dynamic_subagent_tool(
@@ -1096,14 +1105,14 @@ def build_agents(config: AppConfig, store, checkpointer):
     # Legacy fixed specialist flow (kept for compatibility via toggle)
     hypothesis_tool = build_hypothesis_tool(config, store, checkpointer, parallel_specialist_llm)
     sales_tool, _ = build_sales_analysis_tool(
-        config, store, checkpointer, parallel_specialist_llm, salesforce_toolset.tools
+        config, store, checkpointer, parallel_specialist_llm, salesforce_tools
     )
     try:
         promo_tool = tool_registry.find_tool("get_promo_period")
     except KeyError:
         promo_tool = None
     inventory_tool = build_inventory_analysis_tool(
-        config, store, checkpointer, parallel_specialist_llm, sap_toolset.tools, promo_tool
+        config, store, checkpointer, parallel_specialist_llm, sap_tools, promo_tool
     )
     validation_tool = build_validation_tool(config, store, checkpointer, parallel_specialist_llm)
     root_cause_tool = build_root_cause_tool(config, store, checkpointer, specialist_llm)
