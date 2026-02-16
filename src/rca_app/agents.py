@@ -822,21 +822,47 @@ def build_dynamic_subagent_tool(
         """
         selected_tools: List[Any] = []
         selected_tool_names: List[str] = []
+        unresolved_tool_names: List[str] = []
+
+        def _resolve_tool_name(tool_name: str) -> Any:
+            candidates = [tool_name]
+            if "." in tool_name:
+                candidates.append(tool_name.rsplit(".", 1)[-1])
+
+            for candidate in candidates:
+                try:
+                    return tool_registry.find_tool(candidate)
+                except KeyError:
+                    continue
+            raise KeyError(tool_name)
+
         if tool_names:
             for tool_name in tool_names:
                 try:
-                    tool_obj = tool_registry.find_tool(tool_name)
+                    tool_obj = _resolve_tool_name(tool_name)
                 except KeyError:
                     logger.warning("Subagent requested unknown tool '%s'", tool_name)
+                    unresolved_tool_names.append(tool_name)
                     continue
                 selected_tools.append(tool_obj)
-                selected_tool_names.append(tool_name)
+                selected_tool_names.append(getattr(tool_obj, "name", tool_name))
 
-        # Fallback: if no tools were resolved (tool_names missing/empty/invalid),
-        # attach all registered domain tools so capable subtasks are not starved.
-        if not selected_tools:
+        # Fallback only when tool_names are not explicitly constrained.
+        if not tool_names and not selected_tools:
             selected_tools = tool_registry.all_tools()
             selected_tool_names = [getattr(t, "name", "unknown") for t in selected_tools]
+
+        if tool_names and not selected_tools:
+            available = [getattr(t, "name", "unknown") for t in tool_registry.all_tools()]
+            return {
+                "objective": objective,
+                "tool_names_used": [],
+                "notes": (
+                    "No requested tools could be resolved. "
+                    f"Requested={unresolved_tool_names or tool_names}. "
+                    f"Available={available}"
+                ),
+            }
 
         selected_tools += [
             create_manage_memory_tool(namespace=("subagent", "{user_id}")),
@@ -901,6 +927,7 @@ def build_dynamic_subagent_tool(
                     "agent": "DynamicSubagent",
                     "step": f"Objective: {objective}",
                     "tool_names_used": selected_tool_names,
+                    "unresolved_tool_names": unresolved_tool_names,
                     "calls": serialize_messages(tool_call_msgs),
                     "result": response,
                 },

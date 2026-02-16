@@ -749,17 +749,37 @@ function ConfigWizard({ config, setConfig, user, initialKey, onClose }) {
 function TracePanel({ trace }) {
   const entries = useMemo(() => {
     if (!trace) return [];
-    const list = Array.isArray(trace) ? trace : [trace];
-    return list.flatMap((item) => {
-      if (!item) return [];
+    const list = (Array.isArray(trace) ? trace : [trace]).filter(Boolean);
+    const subagentQueue = list
+      .filter((item) => item?.agent === "DynamicSubagent")
+      .map((item) => ({
+        agent: item.agent || "DynamicSubagent",
+        messages: item.tool_calls || item.calls || []
+      }));
+
+    const merged = [];
+    list.forEach((item) => {
+      const agent = item.agent || "Agent";
+      if (agent === "DynamicSubagent") {
+        return;
+      }
       const messages = item.tool_calls || item.calls || [];
-      return [
-        {
-          agent: item.agent || "Agent",
-          messages
-        }
-      ];
+      const runSubagentCount = messages.reduce((count, message) => {
+        const toolCalls = message?.tool_calls || [];
+        return count + toolCalls.filter((call) => call?.name === "run_subagent").length;
+      }, 0);
+      merged.push({
+        agent,
+        messages,
+        subagentCalls: runSubagentCount > 0 ? subagentQueue.splice(0, runSubagentCount) : []
+      });
     });
+
+    if (subagentQueue.length) {
+      merged.push(...subagentQueue.map((entry) => ({ ...entry, subagentCalls: [] })));
+    }
+
+    return merged;
   }, [trace]);
 
   const buildToolCalls = (messages) => {
@@ -797,14 +817,48 @@ function TracePanel({ trace }) {
       }));
   };
 
+  const decodeEscapes = (value) => {
+    if (typeof value !== "string") return value;
+    return value
+      .replace(/\\r\\n/g, "\n")
+      .replace(/\\n/g, "\n")
+      .replace(/\\t/g, "\t");
+  };
+
   const formatPayload = (payload) => {
     if (payload == null) return "";
-    if (typeof payload === "string") return payload;
+    if (typeof payload === "string") {
+      const decoded = decodeEscapes(payload);
+      const trimmed = decoded.trim();
+      if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+        try {
+          return JSON.stringify(JSON.parse(trimmed), null, 2);
+        } catch (err) {
+          return decoded;
+        }
+      }
+      return decoded;
+    }
     try {
       return JSON.stringify(payload, null, 2);
     } catch (err) {
       return String(payload);
     }
+  };
+
+  const escapeHtml = (text) =>
+    text
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+
+  const renderSimpleMarkup = (text) => {
+    const escaped = escapeHtml(text);
+    return escaped
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+      .replace(/\n/g, "<br />");
   };
 
   if (!entries.length) {
@@ -815,12 +869,15 @@ function TracePanel({ trace }) {
     <div className="trace-panel">
       {entries.map((entry, index) => {
         const toolCalls = buildToolCalls(entry.messages);
+        let runSubagentSeen = 0;
         return (
         <div className="trace-item" key={`${entry.agent}-${index}`}>
           <strong>{entry.agent}</strong>
           {toolCalls.length ? (
             <ul style={{ marginTop: "8px", paddingLeft: "16px" }}>
-              {toolCalls.map((call, idx) => (
+              {toolCalls.map((call, idx) => {
+                const subagentForCall = call.name === "run_subagent" ? entry.subagentCalls?.[runSubagentSeen++] : null;
+                return (
                 <li key={`${call.name}-${call.id || idx}`}>
                   <div style={{ fontWeight: 600 }}>{call.name}</div>
                   {call.args ? (
@@ -828,9 +885,11 @@ function TracePanel({ trace }) {
                       <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>
                         Input
                       </div>
-                      <pre style={{ whiteSpace: "pre-wrap", marginTop: "4px" }}>
-                        {formatPayload(call.args)}
-                      </pre>
+                      <div
+                        style={{ whiteSpace: "pre-wrap", marginTop: "4px" }}
+                        className="trace-markup"
+                        dangerouslySetInnerHTML={{ __html: renderSimpleMarkup(formatPayload(call.args)) }}
+                      />
                     </div>
                   ) : null}
                   {call.output ? (
@@ -838,13 +897,50 @@ function TracePanel({ trace }) {
                       <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>
                         Output
                       </div>
-                      <pre style={{ whiteSpace: "pre-wrap", marginTop: "4px" }}>
-                        {formatPayload(call.output)}
-                      </pre>
+                      <div
+                        style={{ whiteSpace: "pre-wrap", marginTop: "4px" }}
+                        className="trace-markup"
+                        dangerouslySetInnerHTML={{ __html: renderSimpleMarkup(formatPayload(call.output)) }}
+                      />
+                    </div>
+                  ) : null}
+                  {subagentForCall ? (
+                    <div style={{ marginTop: "8px", marginLeft: "8px", paddingLeft: "10px", borderLeft: "2px solid #cbd5e1" }}>
+                      {(() => {
+                        const subagentToolCalls = buildToolCalls(subagentForCall.messages);
+                        return (
+                          <div>
+                            <div style={{ fontSize: "12px", color: "#334155", fontWeight: 700 }}>
+                              DynamicSubagent execution
+                            </div>
+                            <ul style={{ marginTop: "6px", paddingLeft: "16px" }}>
+                              {subagentToolCalls.map((subCall, toolIndex) => (
+                                <li key={`${subCall.name}-${subCall.id || toolIndex}`}>
+                                  <div style={{ fontWeight: 600 }}>{subCall.name}</div>
+                                  {subCall.args ? (
+                                    <div
+                                      style={{ whiteSpace: "pre-wrap", marginTop: "4px" }}
+                                      className="trace-markup"
+                                      dangerouslySetInnerHTML={{ __html: renderSimpleMarkup(formatPayload(subCall.args)) }}
+                                    />
+                                  ) : null}
+                                  {subCall.output ? (
+                                    <div
+                                      style={{ whiteSpace: "pre-wrap", marginTop: "4px" }}
+                                      className="trace-markup"
+                                      dangerouslySetInnerHTML={{ __html: renderSimpleMarkup(formatPayload(subCall.output)) }}
+                                    />
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        );
+                      })()}
                     </div>
                   ) : null}
                 </li>
-              ))}
+              );})}
             </ul>
           ) : (
             <p style={{ marginTop: "8px" }}>No tool calls captured.</p>

@@ -470,6 +470,13 @@ body {
   background: #f8fafc;
 }
 
+.trace-markup code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #e2e8f0;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
 .trace-modal-backdrop {
   position: fixed;
   inset: 0;
