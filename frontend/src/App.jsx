@@ -998,11 +998,24 @@ function ChatScreen({ user }) {
 
   useEffect(() => {
     if (!job) return;
-    const interval = setInterval(async () => {
+    let cancelled = false;
+    let terminalStateHandled = false;
+
+    const poll = async () => {
+      if (cancelled || terminalStateHandled) {
+        return;
+      }
+
       try {
         const status = await apiRequest(`/api/chat/status/${job}`);
+
+        if (cancelled || terminalStateHandled) {
+          return;
+        }
+
         setProgress(status);
         if (status.status === "completed") {
+          terminalStateHandled = true;
           const result = status.result || {};
           setMessages((prev) => [
             ...prev,
@@ -1016,20 +1029,33 @@ function ChatScreen({ user }) {
           ]);
           setJob(null);
           setProgress(null);
+          return;
         }
+
         if (status.status === "failed") {
+          terminalStateHandled = true;
           setMessages((prev) => [
             ...prev,
             { role: "assistant", content: `Error: ${status.message}`, id: `${status.id}-err` }
           ]);
           setJob(null);
           setProgress(null);
+          return;
         }
       } catch (err) {
         console.error(err);
       }
-    }, 1200);
-    return () => clearInterval(interval);
+
+      if (!cancelled && !terminalStateHandled) {
+        setTimeout(poll, 1200);
+      }
+    };
+
+    poll();
+
+    return () => {
+      cancelled = true;
+    };
   }, [job]);
 
   const send = async () => {
