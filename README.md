@@ -243,15 +243,20 @@ Further reading on product/LLM evaluation practices:
 
 ### Run MCP toolset servers (SSE)
 
-Start the local MCP servers that expose Salesforce and SAP toolsets over SSE:
+Start the local MCP servers over SSE:
 
 ```bash
 rca-app mcp-salesforce --host 0.0.0.0 --port 8600
 rca-app mcp-sap --host 0.0.0.0 --port 8700
+rca-app mcp-supply-chain --host 0.0.0.0 --port 8800
 ```
 
+`mcp-supply-chain` exposes specialist RCA agents as MCP tools on a single
+`SupplyChainMCPServer` (`hypothesis_tool`, `sales_tool`, `inventory_tool`,
+`validation_tool`, `root_cause_tool`, and `report_tool`).
+
 When running the agent, point `RCA_MCP_SALESFORCE_URL` and `RCA_MCP_SAP_URL` to the
-servers above so the agent resolves tools remotely.
+servers above so the agent resolves data tools remotely.
 
 ### Analyze data in the notebook (optional)
 
