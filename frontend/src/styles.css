@@ -384,7 +384,7 @@ body {
   background: #f1f5f9;
   border-radius: 14px;
   padding: 16px;
-  max-height: 240px;
+  max-height: 65vh;
   overflow-y: auto;
   font-size: 13px;
 }
@@ -468,6 +468,82 @@ body {
   border-radius: 12px;
   padding: 12px;
   background: #f8fafc;
+}
+
+.trace-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  padding: 24px;
+}
+
+.trace-modal-card {
+  width: min(1100px, 96vw);
+  max-height: 88vh;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.3);
+  border: 1px solid #e2e8f0;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trace-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.trace-modal-header h3 {
+  font-size: 16px;
+}
+
+.trace-modal-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid #cbd5f5;
+  background: #f8fafc;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.markdown-content {
+  white-space: normal;
+}
+
+.markdown-content p,
+.markdown-content ul,
+.markdown-content ol,
+.markdown-content pre,
+.markdown-content blockquote,
+.markdown-content table {
+  margin: 0 0 10px 0;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  padding-left: 18px;
+}
+
+.markdown-content code {
+  background: #e2e8f0;
+  padding: 1px 4px;
+  border-radius: 6px;
+  font-family: "Fira Code", "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.markdown-content pre code {
+  display: block;
+  white-space: pre-wrap;
+  padding: 10px;
 }
 
 .chat-input {
