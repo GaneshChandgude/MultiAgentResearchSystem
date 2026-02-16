@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlparse
 
 from .config import AppConfig
 from .mcp_toolset import build_mcp_toolset
@@ -18,12 +19,12 @@ def build_salesforce_toolset(config: AppConfig) -> Toolset:
             description="Salesforce MCP toolset for sales and promotions data.",
             base_url=config.salesforce_mcp_url,
         )
-    except ModuleNotFoundError as exc:
+    except Exception as exc:
         logger.warning("Skipping Salesforce MCP toolset: %s", exc)
         return Toolset(
             name="salesforce",
             tools=[],
-            description="Salesforce MCP toolset unavailable; missing MCP dependency.",
+            description="Salesforce MCP toolset unavailable.",
         )
 
 
@@ -35,10 +36,43 @@ def build_sap_business_one_toolset(config: AppConfig) -> Toolset:
             description="SAP Business One MCP toolset for inventory operations.",
             base_url=config.sap_mcp_url,
         )
-    except ModuleNotFoundError as exc:
+    except Exception as exc:
         logger.warning("Skipping SAP Business One MCP toolset: %s", exc)
         return Toolset(
             name="sap-business-one",
             tools=[],
-            description="SAP Business One MCP toolset unavailable; missing MCP dependency.",
+            description="SAP Business One MCP toolset unavailable.",
         )
+
+
+def build_user_mcp_toolsets(config: AppConfig) -> list[Toolset]:
+    toolsets: list[Toolset] = []
+    for index, server in enumerate(config.mcp_servers):
+        if not isinstance(server, dict):
+            continue
+        if server.get("enabled", True) is False:
+            continue
+        base_url = str(server.get("base_url", "")).strip()
+        if not base_url:
+            continue
+
+        configured_name = str(server.get("name", "")).strip()
+        if configured_name:
+            name = configured_name
+        else:
+            host = urlparse(base_url).hostname or "server"
+            name = f"mcp-{host}-{index + 1}"
+        description = str(server.get("description", "")).strip() or f"User MCP toolset at {base_url}."
+
+        logger.info("Building user MCP toolset name=%s url=%s", name, base_url)
+        try:
+            toolsets.append(
+                build_mcp_toolset(
+                    name=name,
+                    description=description,
+                    base_url=base_url,
+                )
+            )
+        except Exception as exc:
+            logger.warning("Skipping user MCP toolset name=%s: %s", name, exc)
+    return toolsets

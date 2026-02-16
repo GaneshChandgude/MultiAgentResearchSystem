@@ -20,7 +20,7 @@ from .memory import (
 )
 from .observability import build_langfuse_invoke_config
 from .toolset_registry import ToolsetRegistry
-from .toolsets import build_salesforce_toolset, build_sap_business_one_toolset
+from .toolsets import build_salesforce_toolset, build_sap_business_one_toolset, build_user_mcp_toolsets
 from .types import analysisState
 from .utils import (
     filter_tool_messages,
@@ -1076,7 +1076,8 @@ def build_agents(config: AppConfig, store, checkpointer):
 
     salesforce_toolset = build_salesforce_toolset(config)
     sap_toolset = build_sap_business_one_toolset(config)
-    tool_registry = ToolsetRegistry([salesforce_toolset, sap_toolset])
+    user_mcp_toolsets = build_user_mcp_toolsets(config)
+    tool_registry = ToolsetRegistry([salesforce_toolset, sap_toolset, *user_mcp_toolsets])
 
     # New dynamic delegation flow (default)
     subagent_tool = build_dynamic_subagent_tool(
