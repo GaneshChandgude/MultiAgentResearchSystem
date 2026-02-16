@@ -26,6 +26,7 @@ class AppConfig:
     data_dir: Path
     salesforce_mcp_url: str
     sap_mcp_url: str
+    mcp_servers: list[dict[str, Any]]
     langfuse_enabled: bool
     langfuse_public_key: str
     langfuse_secret_key: str
@@ -181,6 +182,7 @@ def load_config() -> AppConfig:
         data_dir=resolve_data_dir(),
         salesforce_mcp_url=salesforce_mcp_url,
         sap_mcp_url=sap_mcp_url,
+        mcp_servers=[],
         langfuse_enabled=langfuse_enabled,
         langfuse_public_key=langfuse_public_key,
         langfuse_secret_key=langfuse_secret_key,

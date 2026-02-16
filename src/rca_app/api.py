@@ -135,6 +135,19 @@ class GuardrailsConfigRequest(BaseModel):
     use_dynamic_subagent_flow: bool = True
 
 
+
+
+class MCPServerConfigRequest(BaseModel):
+    class MCPServerConfig(BaseModel):
+        name: str
+        base_url: str
+        description: str = ""
+        enabled: bool = True
+
+    user_id: str
+    servers: list[MCPServerConfig] = Field(default_factory=list)
+
+
 class ChatStartRequest(BaseModel):
     user_id: str
     query: str
@@ -152,6 +165,7 @@ class ConfigResponse(BaseModel):
     embedder: Dict[str, Any]
     langfuse: Dict[str, Any]
     guardrails: Dict[str, Any]
+    mcp_servers: Dict[str, Any]
 
 
 class CapabilitiesResponse(BaseModel):
@@ -176,11 +190,16 @@ def _build_user_config(user_id: str) -> AppConfig:
     embedder = overrides.get("embedder", {})
     langfuse_overrides = overrides.get("langfuse", {})
     guardrails = overrides.get("guardrails", {})
+    mcp_servers = overrides.get("mcp_servers", {})
 
     updates.update({k: v for k, v in llm.items() if v})
     updates.update({k: v for k, v in embedder.items() if v})
     updates.update(langfuse_overrides)
     updates.update(guardrails)
+    if isinstance(mcp_servers, dict):
+        server_entries = mcp_servers.get("servers")
+        if isinstance(server_entries, list):
+            updates["mcp_servers"] = [entry for entry in server_entries if isinstance(entry, dict)]
 
     return replace(base_config, **updates)
 
@@ -730,6 +749,7 @@ async def config_defaults() -> ConfigResponse:
             "model_input_guardrail_rules": base.model_input_guardrail_rules,
             "use_dynamic_subagent_flow": base.use_dynamic_subagent_flow,
         },
+        mcp_servers={"servers": base.mcp_servers},
     )
 
 
@@ -741,7 +761,14 @@ async def get_config(user_id: str) -> ConfigResponse:
     embedder = configs.get("embedder", {})
     langfuse_config = configs.get("langfuse", {})
     guardrails = configs.get("guardrails", {})
-    return ConfigResponse(llm=llm, embedder=embedder, langfuse=langfuse_config, guardrails=guardrails)
+    mcp_servers = configs.get("mcp_servers", {})
+    return ConfigResponse(
+        llm=llm,
+        embedder=embedder,
+        langfuse=langfuse_config,
+        guardrails=guardrails,
+        mcp_servers=mcp_servers,
+    )
 
 
 @app.post("/api/config/llm")
@@ -769,6 +796,16 @@ async def set_langfuse_config(payload: LangfuseConfigRequest) -> Dict[str, str]:
 @observe()
 async def set_guardrails_config(payload: GuardrailsConfigRequest) -> Dict[str, str]:
     store.upsert_config(payload.user_id, "guardrails", payload.model_dump(exclude={"user_id"}))
+    return {"status": "saved"}
+
+
+
+
+@app.post("/api/config/mcp_servers")
+@observe()
+async def set_mcp_server_config(payload: MCPServerConfigRequest) -> Dict[str, str]:
+    serialized_servers = [entry.model_dump() for entry in payload.servers]
+    store.upsert_config(payload.user_id, "mcp_servers", {"servers": serialized_servers})
     return {"status": "saved"}
 
 

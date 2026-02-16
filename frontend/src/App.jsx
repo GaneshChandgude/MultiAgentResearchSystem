@@ -42,6 +42,9 @@ const emptyConfig = {
     model_guardrails_output_language: "English",
     model_input_guardrail_rules: [],
     use_dynamic_subagent_flow: true
+  },
+  mcp_servers: {
+    servers: []
   }
 };
 
@@ -49,7 +52,8 @@ const configSteps = [
   { key: "llm", label: "LLM Configuration" },
   { key: "embedder", label: "Embedder Setup" },
   { key: "langfuse", label: "Langfuse Observability" },
-  { key: "guardrails", label: "Guardrails & PII" }
+  { key: "guardrails", label: "Guardrails & PII" },
+  { key: "mcp_servers", label: "MCP Server Registry" }
 ];
 
 async function apiRequest(path, options = {}) {
@@ -216,6 +220,31 @@ function ConfigWizard({ config, setConfig, user, initialKey, onClose }) {
     updateField("guardrails", "model_input_guardrail_rules", updated);
   };
 
+  const updateMcpServer = (index, field, value) => {
+    const existing = config.mcp_servers?.servers || [];
+    const updated = existing.map((server, serverIndex) =>
+      serverIndex === index ? { ...server, [field]: value } : server
+    );
+    updateField("mcp_servers", "servers", updated);
+  };
+
+  const addMcpServer = () => {
+    const existing = config.mcp_servers?.servers || [];
+    updateField("mcp_servers", "servers", [
+      ...existing,
+      { name: "", base_url: "", description: "", enabled: true }
+    ]);
+  };
+
+  const removeMcpServer = (index) => {
+    const existing = config.mcp_servers?.servers || [];
+    updateField(
+      "mcp_servers",
+      "servers",
+      existing.filter((_, serverIndex) => serverIndex !== index)
+    );
+  };
+
   const saveCurrent = async () => {
     setSaving(true);
     setError("");
@@ -223,7 +252,8 @@ function ConfigWizard({ config, setConfig, user, initialKey, onClose }) {
       llm: "llm",
       embedder: "embedder",
       langfuse: "langfuse",
-      guardrails: "guardrails"
+      guardrails: "guardrails",
+      mcp_servers: "mcp_servers"
     };
     try {
       await apiRequest(`/api/config/${endpointByKey[currentKey]}`, {
@@ -636,6 +666,66 @@ function ConfigWizard({ config, setConfig, user, initialKey, onClose }) {
               + Add guardrail rule
             </button>
           </div>
+        </div>
+      )}
+      {currentKey === "mcp_servers" && (
+        <div>
+          <p style={{ color: "#475569", fontSize: "14px", marginBottom: "16px" }}>
+            Register MCP server endpoints for this user. These toolsets are exposed to the orchestrator and specialist agents.
+          </p>
+          <div className="guardrail-rule-list">
+            {(config.mcp_servers?.servers || []).map((server, index) => (
+              <div className="guardrail-rule-card" key={`mcp-server-${index}`}>
+                <div className="guardrail-rule-header">
+                  <strong>Server {index + 1}</strong>
+                  <button
+                    type="button"
+                    className="btn btn-outline guardrail-inline-button"
+                    onClick={() => removeMcpServer(index)}
+                  >
+                    Remove server
+                  </button>
+                </div>
+                <div className="input-group">
+                  <label>Server name</label>
+                  <input
+                    value={server.name || ""}
+                    onChange={(event) => updateMcpServer(index, "name", event.target.value)}
+                    placeholder="e.g. crm-tools"
+                  />
+                </div>
+                <div className="input-group">
+                  <label>Base URL</label>
+                  <input
+                    value={server.base_url || ""}
+                    onChange={(event) => updateMcpServer(index, "base_url", event.target.value)}
+                    placeholder="http://localhost:8800"
+                  />
+                </div>
+                <div className="input-group">
+                  <label>Description</label>
+                  <textarea
+                    value={server.description || ""}
+                    onChange={(event) => updateMcpServer(index, "description", event.target.value)}
+                    placeholder="What this MCP server provides"
+                  />
+                </div>
+                <div className="input-group">
+                  <label>Enabled</label>
+                  <select
+                    value={server.enabled === false ? "no" : "yes"}
+                    onChange={(event) => updateMcpServer(index, "enabled", event.target.value === "yes")}
+                  >
+                    <option value="yes">Enabled</option>
+                    <option value="no">Disabled</option>
+                  </select>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button type="button" className="btn btn-secondary guardrail-add-rule" onClick={addMcpServer}>
+            + Register MCP server
+          </button>
         </div>
       )}
       {error ? <p style={{ color: "#ef4444", marginTop: "8px" }}>{error}</p> : null}
@@ -1157,7 +1247,17 @@ export default function App() {
           llm: { ...defaults.llm, ...stored.llm },
           embedder: { ...defaults.embedder, ...stored.embedder },
           langfuse: { ...defaults.langfuse, ...stored.langfuse },
-          guardrails: { ...defaults.guardrails, ...stored.guardrails }
+          guardrails: { ...defaults.guardrails, ...stored.guardrails },
+          mcp_servers: {
+            servers: [
+              ...((defaults.mcp_servers && Array.isArray(defaults.mcp_servers.servers)
+                ? defaults.mcp_servers.servers
+                : [])),
+              ...((stored.mcp_servers && Array.isArray(stored.mcp_servers.servers)
+                ? stored.mcp_servers.servers
+                : []))
+            ]
+          }
         });
       })
       .catch(() => undefined);
