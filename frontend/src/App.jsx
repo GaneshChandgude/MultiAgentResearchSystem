@@ -1152,6 +1152,35 @@ function MarkdownMessage({ content }) {
   return <div className="message-content markdown-content">{output.length ? output : content}</div>;
 }
 
+function parseIsoTime(value) {
+  if (!value || typeof value !== "string") return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function resolveDurationMs(startValue, endValue) {
+  const startMs = parseIsoTime(startValue);
+  const endMs = parseIsoTime(endValue);
+  if (startMs === null || endMs === null) return null;
+  const diff = endMs - startMs;
+  return diff >= 0 ? diff : null;
+}
+
+function formatDuration(durationMs) {
+  if (typeof durationMs !== "number" || Number.isNaN(durationMs) || durationMs < 0) {
+    return "";
+  }
+
+  const totalSeconds = Math.round(durationMs / 1000);
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`;
+  }
+
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+}
+
 function ChatScreen({ user }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -1206,6 +1235,7 @@ function ChatScreen({ user }) {
         if (status.status === "completed") {
           terminalStateHandled = true;
           const result = status.result || {};
+          const resolutionTimeMs = resolveDurationMs(status.created_at, status.updated_at);
           setMessages((prev) => [
             ...prev,
             {
@@ -1213,6 +1243,7 @@ function ChatScreen({ user }) {
               content: result.response,
               trace: result.trace,
               chatId: result.chat_id,
+              resolutionTimeMs,
               id: `${result.chat_id}-a`
             }
           ]);
@@ -1347,6 +1378,12 @@ function ChatScreen({ user }) {
     return activeProgressLabel;
   }, [activeProgressLabel, activeTodoStep]);
 
+  const activeResolutionTime = useMemo(() => {
+    if (!job || !progress) return "";
+    const elapsedMs = resolveDurationMs(progress.created_at, progress.updated_at);
+    return formatDuration(elapsedMs);
+  }, [job, progress]);
+
   return (
     <div className="chat-layout">
       <div>
@@ -1401,6 +1438,9 @@ function ChatScreen({ user }) {
                       <div className="message-content">{msg.content}</div>
                     )}
                   </div>
+                  {msg.role === "assistant" && typeof msg.resolutionTimeMs === "number" ? (
+                    <div className="message-meta">Resolved in {formatDuration(msg.resolutionTimeMs)}</div>
+                  ) : null}
                   {msg.role === "assistant" ? (
                     <ResponseActions userId={user.user_id} message={msg} />
                   ) : null}
@@ -1420,6 +1460,9 @@ function ChatScreen({ user }) {
                     <span className="typing-status">{inlineTaskLabel}</span>
                     {typeof progress?.progress === "number" ? (
                       <span className="typing-progress">{Math.round(progress.progress)}%</span>
+                    ) : null}
+                    {activeResolutionTime ? (
+                      <span className="typing-elapsed">Elapsed {activeResolutionTime}</span>
                     ) : null}
                   </div>
                 </div>
