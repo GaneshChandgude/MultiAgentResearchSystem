@@ -48,7 +48,6 @@ class AppConfig:
     model_guardrails_moderation_enabled: bool
     model_guardrails_output_language: str
     model_input_guardrail_rules: list[dict[str, Any]]
-    use_dynamic_subagent_flow: bool
     recursion_limit: int
 
 
@@ -153,12 +152,6 @@ def load_config() -> AppConfig:
                 logger.warning("RCA_MODEL_INPUT_GUARDRAIL_RULES must be a JSON array; ignoring.")
         except json.JSONDecodeError:
             logger.warning("Failed to parse RCA_MODEL_INPUT_GUARDRAIL_RULES; ignoring.")
-    use_dynamic_subagent_flow = os.getenv("RCA_USE_DYNAMIC_SUBAGENT_FLOW", "true").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
     recursion_limit = int(os.getenv("RCA_RECURSION_LIMIT", "50").strip() or "50")
 
     logger.debug(
@@ -204,6 +197,5 @@ def load_config() -> AppConfig:
         model_guardrails_moderation_enabled=model_guardrails_moderation_enabled,
         model_guardrails_output_language=model_guardrails_output_language,
         model_input_guardrail_rules=model_input_guardrail_rules,
-        use_dynamic_subagent_flow=use_dynamic_subagent_flow,
         recursion_limit=recursion_limit,
     )
