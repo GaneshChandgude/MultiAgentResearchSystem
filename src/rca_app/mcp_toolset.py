@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
 import importlib.util
+import threading
 from typing import Any, Dict, Iterable, List
 
 from langchain_core.tools import StructuredTool
@@ -21,12 +23,72 @@ def _normalize_sse_url(base_url: str) -> str:
     return f"{url}/sse"
 
 
+class _AsyncioThreadRunner:
+    """Execute coroutines on a dedicated event loop thread."""
+
+    def __init__(self) -> None:
+        self._ready = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="mcp-toolset-loop", daemon=True)
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._closed = False
+        self._thread.start()
+        self._ready.wait()
+
+    def _run(self) -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        self._loop = loop
+        self._ready.set()
+        try:
+            loop.run_forever()
+        finally:
+            loop.close()
+
+    def run(self, coro: Any) -> Any:
+        if self._closed or self._loop is None:
+            raise RuntimeError("Failed to initialize dedicated asyncio loop for MCP calls.")
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        return future.result()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(self._loop.stop)
+        self._thread.join(timeout=1.0)
+        self._closed = True
+
+
+_runner_lock = threading.Lock()
+_runner: _AsyncioThreadRunner | None = None
+
+
+def _get_runner() -> _AsyncioThreadRunner:
+    global _runner
+    if _runner is not None:
+        return _runner
+    with _runner_lock:
+        if _runner is None:
+            _runner = _AsyncioThreadRunner()
+    return _runner
+
+
 def _run_coro(coro):
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
-    raise RuntimeError("MCP client invoked from a running event loop.")
+
+    return _get_runner().run(coro)
+
+
+def shutdown_mcp_runtime() -> None:
+    global _runner
+    with _runner_lock:
+        if _runner is None:
+            return
+        _runner.close()
+        _runner = None
 
 
 def _load_mcp_client() -> tuple[Any, Any]:

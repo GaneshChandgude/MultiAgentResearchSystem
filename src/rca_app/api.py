@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import logging
+import threading
 from dataclasses import asdict, replace
 from typing import Any, Dict, Literal, Optional
 
@@ -20,6 +21,7 @@ from .guardrails import apply_input_guardrails, apply_output_guardrails, apply_t
 from .logging_utils import configure_logging
 from .memory import mark_memory_useful, semantic_recall
 from .memory_reflection import add_episodic_memory, add_procedural_memory, build_semantic_memory
+from .mcp_toolset import shutdown_mcp_runtime
 from .ui_store import UIStore
 from .utils import extract_json_from_response, register_todo_progress_sink
 
@@ -44,6 +46,11 @@ async def _configure_api_logging() -> None:
     except Exception:
         logger.exception("Failed to precompute shared assistant capabilities at startup")
 
+
+@app.on_event("shutdown")
+async def _shutdown_api_resources() -> None:
+    shutdown_mcp_runtime()
+
 _base_config = load_config()
 client = httpx.Client(verify=False)
 langfuse = Langfuse(
@@ -63,6 +70,7 @@ register_todo_progress_sink(
     )
 )
 _app_cache: Dict[str, Any] = {}
+_app_cache_lock = threading.Lock()
 _session_cache: Dict[str, Dict[str, Any]] = {}
 _pending_persistence: set[str] = set()
 _SHARED_CAPABILITIES_PROFILE_ID = "__shared_capabilities__"
@@ -206,10 +214,17 @@ def _build_user_config(user_id: str) -> AppConfig:
 
 def _get_rca_app(config: AppConfig):
     key = _config_key(config)
-    if key not in _app_cache:
-        logger.info("Building RCA app for config hash=%s", hash(key))
-        _app_cache[key] = build_app(config)
-    return _app_cache[key]
+    cached = _app_cache.get(key)
+    if cached is not None:
+        return cached
+
+    with _app_cache_lock:
+        cached = _app_cache.get(key)
+        if cached is None:
+            logger.info("Building RCA app for config hash=%s", hash(key))
+            cached = build_app(config)
+            _app_cache[key] = cached
+    return cached
 
 
 def _build_shared_capabilities_config() -> AppConfig:
