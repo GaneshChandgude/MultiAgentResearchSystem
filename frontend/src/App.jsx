@@ -1554,6 +1554,7 @@ export default function App() {
             <p>Inspect traces and monitor execution in real time.</p>
           </div>
           <div className="topbar-actions">
+            <span className="logged-in-user" title={user.user_id}>Signed in as {user.username || user.user_id}</span>
             <div className="settings-menu">
               <button
                 className="btn btn-secondary"
