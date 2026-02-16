@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
 const emptyConfig = {
@@ -955,12 +954,106 @@ function ResponseActions({ userId, message }) {
       ) : null}
       {sent ? <span className="feedback-status">Thanks for the feedback.</span> : null}
       {showTrace ? (
-        <div className="trace-inline">
-          <TracePanel trace={message.trace} />
+        <div className="trace-modal-backdrop" role="dialog" aria-modal="true" aria-label="Agentic trace">
+          <div className="trace-modal-card">
+            <div className="trace-modal-header">
+              <h3>Agentic trace</h3>
+              <button type="button" className="trace-modal-close" onClick={() => setShowTrace(false)}>
+                ×
+              </button>
+            </div>
+            <TracePanel trace={message.trace} />
+          </div>
         </div>
       ) : null}
     </div>
   );
+}
+
+function MarkdownMessage({ content }) {
+  const inlineFormat = (text) => {
+    const source = text || "";
+    const tokens = source.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^\)]+\))/g).filter(Boolean);
+    return tokens.map((token, index) => {
+      if (token.startsWith("**") && token.endsWith("**")) {
+        return <strong key={index}>{token.slice(2, -2)}</strong>;
+      }
+      if (token.startsWith("`") && token.endsWith("`")) {
+        return <code key={index}>{token.slice(1, -1)}</code>;
+      }
+      const linkMatch = token.match(/^\[([^\]]+)\]\(([^\)]+)\)$/);
+      if (linkMatch) {
+        return (
+          <a key={index} href={linkMatch[2]} target="_blank" rel="noreferrer">
+            {linkMatch[1]}
+          </a>
+        );
+      }
+      return <span key={index}>{token}</span>;
+    });
+  };
+
+  const lines = String(content || "").split("\n");
+  const output = [];
+  let listItems = [];
+  let listType = null;
+
+  const flushList = (key) => {
+    if (!listItems.length || !listType) return;
+    const ListTag = listType;
+    output.push(
+      <ListTag key={key}>
+        {listItems.map((item, idx) => (
+          <li key={idx}>{inlineFormat(item)}</li>
+        ))}
+      </ListTag>
+    );
+    listItems = [];
+    listType = null;
+  };
+
+  lines.forEach((rawLine, index) => {
+    const line = rawLine.trimEnd();
+    if (!line.trim()) {
+      flushList(`list-${index}`);
+      return;
+    }
+
+    const headingMatch = line.match(/^(#{1,3})\s+(.*)$/);
+    if (headingMatch) {
+      flushList(`list-${index}`);
+      const level = headingMatch[1].length;
+      const HeadingTag = `h${level}`;
+      output.push(<HeadingTag key={`heading-${index}`}>{inlineFormat(headingMatch[2])}</HeadingTag>);
+      return;
+    }
+
+    const bulletMatch = line.match(/^[-*]\s+(.*)$/);
+    const orderedMatch = line.match(/^\d+[\.)]\s+(.*)$/);
+    if (bulletMatch) {
+      if (listType && listType !== "ul") {
+        flushList(`list-${index}`);
+      }
+      listType = "ul";
+      listItems.push(bulletMatch[1]);
+      return;
+    }
+    if (orderedMatch) {
+      if (listType && listType !== "ol") {
+        flushList(`list-${index}`);
+      }
+      listType = "ol";
+      listItems.push(orderedMatch[1]);
+      return;
+    }
+
+    flushList(`list-${index}`);
+    output.push(<p key={`p-${index}`}>{inlineFormat(line)}</p>);
+  });
+
+  flushList("list-end");
+
+  return <div className="message-content markdown-content">{output.length ? output : content}</div>;
 }
 
 function ChatScreen({ user }) {
@@ -1206,7 +1299,11 @@ function ChatScreen({ user }) {
                 </div>
                 <div className="message-stack">
                   <div className={`message ${msg.role === "user" ? "user" : "assistant"}`}>
-                    <div className="message-content">{msg.content}</div>
+                    {msg.role === "assistant" ? (
+                      <MarkdownMessage content={msg.content} />
+                    ) : (
+                      <div className="message-content">{msg.content}</div>
+                    )}
                   </div>
                   {msg.role === "assistant" ? (
                     <ResponseActions userId={user.user_id} message={msg} />
