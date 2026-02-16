@@ -1077,7 +1077,9 @@ def build_agents(config: AppConfig, store, checkpointer):
     salesforce_toolset = build_salesforce_toolset(config)
     sap_toolset = build_sap_business_one_toolset(config)
     user_mcp_toolsets = build_user_mcp_toolsets(config)
-    tool_registry = ToolsetRegistry([salesforce_toolset, sap_toolset, *user_mcp_toolsets])
+    # Registry is used for dynamic tool discovery and should only contain
+    # user-registered MCP server tools.
+    tool_registry = ToolsetRegistry(user_mcp_toolsets)
 
     # New dynamic delegation flow (default)
     subagent_tool = build_dynamic_subagent_tool(
