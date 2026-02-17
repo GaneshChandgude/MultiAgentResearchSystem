@@ -1078,10 +1078,28 @@ Sources:
         result = citation_agent.invoke({"messages": messages}, tool_config)
         final_msg = result["messages"][-1].content
         response = process_response(final_msg, llm=llm, app_config=config)
-        return {
+        output = {
             "report_with_citations": response.get("report_with_citations", report),
             "citation_map": response.get("citation_map", {}),
         }
+
+        internal_msgs = result["messages"][2:-1]
+        tool_call_msgs = filter_tool_messages(internal_msgs)
+        if user_id and query_id:
+            persist_agent_trace(
+                store,
+                user_id=str(user_id),
+                query_id=str(query_id),
+                trace_entry={
+                    "agent": "CitationAgent",
+                    "step": "Attached citations to synthesized report",
+                    "source_count": len(sources),
+                    "calls": serialize_messages(tool_call_msgs),
+                    "citation_map": output["citation_map"],
+                },
+            )
+
+        return output
 
     return citation_agent_tool
 
