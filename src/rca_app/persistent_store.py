@@ -5,6 +5,7 @@ import json
 import logging
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from typing import Iterable, List
 
@@ -47,8 +48,64 @@ class SQLiteBackedStore(BaseStore):
             namespace = tuple(json.loads(namespace_json))
             value = json.loads(value_json)
             ops.append(PutOp(namespace, key, value))
-        self._store.batch(ops)
+        self._batch_with_retries(ops, context="disk load")
         logger.info("Loaded %s persisted memory records from %s", len(rows), self._path)
+
+    def _batch_with_retries(
+        self,
+        ops: List[PutOp],
+        *,
+        context: str,
+        max_chunk_size: int = 32,
+        max_retries: int = 3,
+    ) -> None:
+        if not ops:
+            return
+
+        chunk_size = min(max_chunk_size, len(ops))
+        for start in range(0, len(ops), chunk_size):
+            chunk = ops[start : start + chunk_size]
+            for attempt in range(1, max_retries + 1):
+                try:
+                    self._store.batch(chunk)
+                    break
+                except ValueError as exc:
+                    message = str(exc)
+                    is_embedding_count_mismatch = (
+                        "Number of embeddings" in message
+                        and "does not match number of indices" in message
+                    )
+                    if not is_embedding_count_mismatch:
+                        raise
+
+                    if len(chunk) == 1:
+                        logger.warning(
+                            "Skipping memory record during %s due to repeated embedding mismatch: %s",
+                            context,
+                            message,
+                        )
+                        break
+
+                    if attempt == max_retries:
+                        mid = len(chunk) // 2
+                        logger.warning(
+                            "Embedding mismatch while %s; splitting chunk of size %s",
+                            context,
+                            len(chunk),
+                        )
+                        self._batch_with_retries(chunk[:mid], context=context)
+                        self._batch_with_retries(chunk[mid:], context=context)
+                        break
+
+                    sleep_s = 0.5 * attempt
+                    logger.warning(
+                        "Embedding mismatch while %s (attempt %s/%s). Retrying in %.1fs",
+                        context,
+                        attempt,
+                        max_retries,
+                        sleep_s,
+                    )
+                    time.sleep(sleep_s)
 
     def batch(self, ops: Iterable[Op]) -> list[Result]:
         ops_list = list(ops)
