@@ -4,6 +4,7 @@ import asyncio
 import importlib
 import logging
 import importlib.util
+import inspect
 import threading
 from typing import Any, Dict, Iterable, List
 
@@ -133,9 +134,10 @@ def _tool_field(tool_info: Any, field: str, fallback: str | None = None) -> Any:
 
 
 class MCPToolsetClient:
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, headers: Dict[str, str] | None = None) -> None:
         self.base_url = base_url.rstrip("/")
         self.sse_url = _normalize_sse_url(base_url)
+        self.headers = {str(key): str(value) for key, value in (headers or {}).items() if key and value}
 
     def list_tools(self) -> List[Any]:
         return _run_coro(self._list_tools())
@@ -146,7 +148,11 @@ class MCPToolsetClient:
     async def _list_tools(self) -> List[Any]:
         ClientSession, sse_client = _load_mcp_client()
 
-        async with sse_client(self.sse_url) as (read, write):
+        sse_kwargs: Dict[str, Any] = {}
+        if self.headers and "headers" in inspect.signature(sse_client).parameters:
+            sse_kwargs["headers"] = self.headers
+
+        async with sse_client(self.sse_url, **sse_kwargs) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.list_tools()
@@ -158,7 +164,11 @@ class MCPToolsetClient:
     async def _call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         ClientSession, sse_client = _load_mcp_client()
 
-        async with sse_client(self.sse_url) as (read, write):
+        sse_kwargs: Dict[str, Any] = {}
+        if self.headers and "headers" in inspect.signature(sse_client).parameters:
+            sse_kwargs["headers"] = self.headers
+
+        async with sse_client(self.sse_url, **sse_kwargs) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(tool_name, arguments)
@@ -200,8 +210,8 @@ def _build_tool(client: MCPToolsetClient, tool_info: Any) -> StructuredTool:
     )
 
 
-def build_mcp_toolset(name: str, description: str, base_url: str) -> Toolset:
-    client = MCPToolsetClient(base_url)
+def build_mcp_toolset(name: str, description: str, base_url: str, headers: Dict[str, str] | None = None) -> Toolset:
+    client = MCPToolsetClient(base_url, headers=headers)
     tools = []
     for tool_info in client.list_tools():
         tool_name = _tool_field(tool_info, "name") or "unknown"

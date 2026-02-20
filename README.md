@@ -258,6 +258,8 @@ rca-app mcp-supply-chain --host 0.0.0.0 --port 8800
 When running the agent, point `RCA_MCP_SALESFORCE_URL` and `RCA_MCP_SAP_URL` to the
 servers above so the agent resolves data tools remotely.
 
+You can also register additional user-scoped MCP servers from the UI (`Settings -> MCP Server Registry`) with fields for name, URL, description, enabled flag, and optional HTTP headers (for authenticated MCP gateways, such as GitHub MCP proxies).
+
 ### Analyze data in the notebook (optional)
 
 Open the notebook to explore RCA analysis steps and data summaries:

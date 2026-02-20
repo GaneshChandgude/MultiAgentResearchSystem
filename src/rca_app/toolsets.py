@@ -79,12 +79,16 @@ def build_user_mcp_toolsets(config: AppConfig) -> list[Toolset]:
         description = str(server.get("description", "")).strip() or f"User MCP toolset at {base_url}."
 
         logger.info("Building user MCP toolset name=%s url=%s", name, base_url)
+        headers = server.get("headers")
+        if not isinstance(headers, dict):
+            headers = None
         try:
             toolsets.append(
                 build_mcp_toolset(
                     name=name,
                     description=description,
                     base_url=base_url,
+                    headers=headers,
                 )
             )
         except Exception as exc:

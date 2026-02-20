@@ -147,6 +147,7 @@ class MCPServerConfigRequest(BaseModel):
         name: str
         base_url: str
         description: str = ""
+        headers: Dict[str, str] = Field(default_factory=dict)
         enabled: bool = True
 
     user_id: str

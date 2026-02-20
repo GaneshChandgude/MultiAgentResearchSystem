@@ -230,7 +230,7 @@ function ConfigWizard({ config, setConfig, user, initialKey, onClose }) {
     const existing = config.mcp_servers?.servers || [];
     updateField("mcp_servers", "servers", [
       ...existing,
-      { name: "", base_url: "", description: "", enabled: true }
+      { name: "", base_url: "", description: "", headers: {}, enabled: true }
     ]);
   };
 
@@ -694,6 +694,23 @@ function ConfigWizard({ config, setConfig, user, initialKey, onClose }) {
                     value={server.description || ""}
                     onChange={(event) => updateMcpServer(index, "description", event.target.value)}
                     placeholder="What this MCP server provides"
+                  />
+                </div>
+                <div className="input-group">
+                  <label>Headers (JSON object)</label>
+                  <textarea
+                    value={JSON.stringify(server.headers || {}, null, 2)}
+                    onChange={(event) => {
+                      try {
+                        const parsed = JSON.parse(event.target.value || "{}");
+                        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                          updateMcpServer(index, "headers", parsed);
+                        }
+                      } catch (err) {
+                        // Keep existing value until valid JSON is provided.
+                      }
+                    }}
+                    placeholder={'{"Authorization": "Bearer <token>"}'}
                   />
                 </div>
                 <div className="input-group">
