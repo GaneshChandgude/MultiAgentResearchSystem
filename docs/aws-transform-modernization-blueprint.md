@@ -41,6 +41,7 @@ Execution contract:
 - If a phase lacks required inputs, emit a "BLOCKED" status with exact missing inputs and continue with non-blocked phases.
 - Maintain a running modernization plan with status: NOT_STARTED | IN_PROGRESS | BLOCKED | COMPLETED.
 - After each phase, update a persistent handoff bundle so downstream phases can reuse already-discovered context.
+- Before executing any phase with configurable inputs, pause to validate and record phase-specific parameters (for example: scope, domain selection, engine/database settings, and output location).
 
 Cross-phase context bundle (required):
 - Maintain `/artifacts/modernization_context_pack.json` as the single source of truth for reusable project context.
@@ -78,22 +79,28 @@ Phases and expected outputs:
 5) Decompose code
    - Group programs/components into domains bounded by dependency cohesion
    - Identify shared kernels and anti-corruption boundaries
-   - Output: domain_decomposition.json + domain_diagram.md
+   - Support domain maintenance actions (create/edit/remove/import/export), seed selection, and decomposition re-runs
+   - Publish both table-oriented and graph-oriented domain/dependency views
+   - Output: domain_decomposition.json + domain_diagram.md + dependency_graph_interactive.json
 
 6) Plan migration wave
    - Define wave sequencing based on coupling, risk, business criticality, test readiness
-   - Output: migration_wave_plan.json + cutover_strategy.md
+   - Publish recommended and preferred wave assignments, and regenerate sequence when user overrides wave preferences
+   - Output: migration_wave_plan.json + cutover_strategy.md + wave_preferences.json
 
 7) Plan & test
+   - Capture test-plan inputs and scope prior to generation
    - Generate test cases for equivalence/regression/non-functional checks
    - Generate test data collection scripts
    - Generate test automation scripts for source-vs-target parity
    - Output: test_plan.md, scripts/test_data_collection/*, scripts/test_automation/*
 
 8) Transform
+   - Capture transform configuration (refactor engine version, project name, root package, target database, and legacy encoding)
+   - Select domains to transform and record skipped domains with rationale
    - Refactor code into target implementation patterns
    - Reforge transformed code (quality hardening, style normalization, security checks, performance guardrails)
-   - Output: transformed code in destination repo + transformation_report.md
+   - Output: transformed code in destination repo + transformation_report.md + transform_artifact_manifest.json
 
 9) Agent-ready handoff packaging
    - Consolidate reusable outputs, traceability links, and unresolved decisions for specialist agents
@@ -230,3 +237,30 @@ Use the following captions as a ready-to-use narration track for screenshots 21 
 | 38 | Generated technical documentation is indexed into the knowledge base so users can ask follow-up questions in chat. |
 | 39 | Technical documentation review supports in-app PDF viewing, including high-level overview, purpose, and feature sections. |
 | 40 | Documentation results list generated files with status, and users can select an entry and open it in the viewer. |
+
+## 7) Screenshot script (images 41-60)
+
+Use the following captions as a ready-to-use narration track for screenshots 41 through 60.
+
+| Image | Caption |
+| --- | --- |
+| 41 | Refactor-code guidance appears directly in the job plan, prompting users to configure transform inputs before generation. |
+| 42 | Refactor output view shows the generated artifact path in S3 and domain-level transform/generate completion states. |
+| 43 | Domain selection for refactoring lets users pick modernization scope and proceed with Submit once domains are chosen. |
+| 44 | The domain selection screen keeps status, sequence, and file counts visible so users can validate refactor scope before submission. |
+| 45 | Configure transformation captures engine version, project naming, target database, and legacy encoding settings in one form. |
+| 46 | Refactor setup also supports a searchable domain list, helping teams select only the business domains to modernize first. |
+| 47 | Guided tips inside the job plan walk users through the transform step from task selection to parameter setup. |
+| 48 | Test-plan guidance highlights where to configure plan inputs while preserving live chat context and job progress visibility. |
+| 49 | Migration-wave preference editing supports assigning domains to preferred waves before regenerating the plan. |
+| 50 | Chart view visualizes recommended migration waves by domain, including file and LOC sizing to aid sequencing decisions. |
+| 51 | Users can toggle between table and chart formats to review wave recommendations in the representation they prefer. |
+| 52 | Table view lists recommended versus preferred wave values, enabling quick review before saving or submitting. |
+| 53 | Plan-migration-wave starts from the job plan panel and guides users to configure wave inputs in sequence. |
+| 54 | Decomposition graph domain view shows cross-domain integrations, helping identify coupling before migration planning. |
+| 55 | Dependency graph mode provides zoom and filter controls so users can inspect parent-child and file-level link density. |
+| 56 | Layout actions in graph view reorganize dense dependency maps for easier structural analysis of decomposition results. |
+| 57 | Decomposition in-progress state keeps domain table data visible while indicating active processing and next-step actions. |
+| 58 | Create-domain dialog captures domain metadata and allows marking seed files to steer grouping behavior. |
+| 59 | Actions menu centralizes domain operations such as create/edit/remove, import/export, and decomposition configuration updates. |
+| 60 | Completed decomposition summary confirms successful domain generation and leaves save/submit controls ready for workflow continuation. |
