@@ -40,6 +40,19 @@ Execution contract:
 - Produce traceable artifacts for each phase.
 - If a phase lacks required inputs, emit a "BLOCKED" status with exact missing inputs and continue with non-blocked phases.
 - Maintain a running modernization plan with status: NOT_STARTED | IN_PROGRESS | BLOCKED | COMPLETED.
+- After each phase, update a persistent handoff bundle so downstream phases can reuse already-discovered context.
+
+Cross-phase context bundle (required):
+- Maintain `/artifacts/modernization_context_pack.json` as the single source of truth for reusable project context.
+- Maintain `/artifacts/agent_handoff.md` with concise "what changed / what remains / risks" notes per phase.
+- Each phase must append:
+  - `inputs_used`
+  - `outputs_produced`
+  - `open_questions`
+  - `assumptions`
+  - `decisions`
+  - `risks`
+- Before starting a phase, always load the latest context pack and handoff notes.
 
 Phases and expected outputs:
 1) Kick off modernization
@@ -82,11 +95,17 @@ Phases and expected outputs:
    - Reforge transformed code (quality hardening, style normalization, security checks, performance guardrails)
    - Output: transformed code in destination repo + transformation_report.md
 
+9) Agent-ready handoff packaging
+   - Consolidate reusable outputs, traceability links, and unresolved decisions for specialist agents
+   - Produce a compact "specialist starter context" that can be passed to any phase-specific agent
+   - Output: artifacts/specialist_starter_context.json + artifacts/traceability_matrix.md
+
 Global quality gates:
 - Functional equivalence risks documented
 - Dependency and data lineage preserved or explicitly remapped
 - Test coverage summary included
 - Open risks and manual decisions listed at the end
+- Context pack and handoff notes are complete, current, and reusable by specialized agents without re-discovery
 
 Final response format:
 - Executive summary
@@ -150,6 +169,15 @@ Create one specialist per phase and keep a thin orchestrator.
 ### N. ModernizationQAAgent (cross-cutting)
 - Independent reviewer for artifacts, risks, and gate criteria before phase completion.
 
+### Shared handoff contract for all specialized agents
+- Every specialist must read `artifacts/modernization_context_pack.json` and `artifacts/agent_handoff.md` before execution.
+- Every specialist must write back:
+  - key findings
+  - artifact references
+  - unresolved dependencies
+  - decisions needed from upstream/downstream agents
+- The orchestrator should fail a phase gate if an agent does not publish handoff updates.
+
 ## 4) Repository integration model (source + destination MCP)
 
 For your first implementation, register two MCP servers in user config:
@@ -175,3 +203,30 @@ Current platform behavior and conclusion:
 Practical conclusion:
 - If your GitHub MCP server is SSE-accessible and exposes tools over MCP, you can connect now using the existing registration flow.
 - If your GitHub MCP server is stdio-only (no SSE endpoint), you still need an SSE bridge/proxy layer.
+
+## 6) Screenshot script (images 21-40)
+
+Use the following captions as a ready-to-use narration track for screenshots 21 through 40.
+
+| Image | Caption |
+| --- | --- |
+| 21 | Decomposition output can be reviewed in both table and graph views, with domains, seeds, and complexity/coverage indicators shown together. |
+| 22 | The job plan supports conversational Q&A against generated artifacts, so users can ask component-level functionality questions directly in context. |
+| 23 | Business rules are listed with rule IDs, rule types, inputs, and Given-When-Then acceptance criteria for traceability. |
+| 24 | Functional flow diagrams are available at multiple abstraction levels to inspect end-to-end logic and decision branches. |
+| 25 | BMS screen preview renders the mainframe UI layout, enabling quick validation of legacy screen behavior and labels. |
+| 26 | COBOL statement metrics and business-rule metrics are surfaced together to combine structural complexity and business logic density. |
+| 27 | File-level business logic documentation begins with summary, environment context, and key functional flows. |
+| 28 | Extracted business logic can be navigated hierarchically down to file artifacts (COBOL/JCL and related assets). |
+| 29 | Component-level documentation includes summary, functional behavior, environment details, and screen/flow references. |
+| 30 | The extracted business logic tree shows third-level components (transaction and batch) under each business function. |
+| 31 | Business function detail pages capture purpose, key capabilities, and identified components for each functional area. |
+| 32 | At the second level, users select a business function from the application-level catalog to drill into details. |
+| 33 | The application-level overview consolidates scope, enterprise context, and discovered functional groups. |
+| 34 | Results are presented in multi-level hierarchy; the first level starts with application-level business specifications. |
+| 35 | The job timeline records execution progress and messages while business logic extraction runs within the broader plan. |
+| 36 | Business logic extraction setup supports application-level or file-level scope, with optional detailed functional specs. |
+| 37 | Guided onboarding starts with providing extraction inputs before execution proceeds through the configured plan. |
+| 38 | Generated technical documentation is indexed into the knowledge base so users can ask follow-up questions in chat. |
+| 39 | Technical documentation review supports in-app PDF viewing, including high-level overview, purpose, and feature sections. |
+| 40 | Documentation results list generated files with status, and users can select an entry and open it in the viewer. |
