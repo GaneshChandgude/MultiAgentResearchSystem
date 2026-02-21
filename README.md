@@ -241,6 +241,76 @@ Further reading on product/LLM evaluation practices:
 - [The LLM evals field guide](https://hamel.dev/blog/posts/field-guide/)
 - [Instructions and reference data for LLM evals](https://arxiv.org/pdf/2404.12272)
 
+## Troubleshooting
+
+### `[SSL: CERTIFICATE_VERIFY_FAILED]` when connecting to GitHub
+
+If you see errors such as:
+
+```text
+('unhandled errors in a TaskGroup', [ConnectError('[SSL: CERTIFICATE_VERIFY_FAILED] ...')])
+```
+
+your Python runtime (or Git) cannot find a trusted CA certificate chain. This is
+usually an environment issue rather than an application bug.
+
+1. Verify your local trust store and test GitHub TLS:
+
+```bash
+python -c "import ssl; print(ssl.get_default_verify_paths())"
+python -c "import requests; print(requests.get('https://api.github.com', timeout=10).status_code)"
+git ls-remote https://github.com/github/gitignore.git
+```
+
+2. If Python can’t validate certs, point it to a CA bundle (recommended).
+
+**Git Bash / Linux / macOS shell:**
+
+```bash
+python -m pip install --upgrade certifi
+export SSL_CERT_FILE="$(python -c 'import certifi; print(certifi.where())')"
+export REQUESTS_CA_BUNDLE="$SSL_CERT_FILE"
+export CURL_CA_BUNDLE="$SSL_CERT_FILE"
+```
+
+**PowerShell:**
+
+```powershell
+python -m pip install --upgrade certifi
+$env:SSL_CERT_FILE = python -c "import certifi; print(certifi.where())"
+$env:REQUESTS_CA_BUNDLE = $env:SSL_CERT_FILE
+$env:CURL_CA_BUNDLE = $env:SSL_CERT_FILE
+```
+
+**cmd.exe:**
+
+```bat
+python -m pip install --upgrade certifi
+for /f "delims=" %i in ('python -c "import certifi; print(certifi.where())"') do set SSL_CERT_FILE=%i
+set REQUESTS_CA_BUNDLE=%SSL_CERT_FILE%
+set CURL_CA_BUNDLE=%SSL_CERT_FILE%
+```
+
+3. Re-run the test command carefully (ensure the closing quote is present):
+
+```bash
+python -c "import requests; print(requests.get('https://api.github.com', timeout=10).status_code)"
+```
+
+4. If your company uses a TLS-inspecting proxy, append your corporate root CA to
+the cert bundle and set `SSL_CERT_FILE` to that merged bundle.
+
+5. For Git specifically, set the CA file explicitly:
+
+```bash
+git config --global http.sslCAInfo "$SSL_CERT_FILE"
+```
+
+6. Retry your GitHub operation after restarting the shell.
+
+> Avoid disabling SSL verification (`verify=False`, `GIT_SSL_NO_VERIFY=true`) in
+> normal workflows; use trusted CA configuration instead.
+
 ### Run MCP toolset servers (SSE)
 
 Start the local MCP servers over SSE:
