@@ -9,6 +9,16 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langchain.tools import tool
 from langmem import create_manage_memory_tool, create_search_memory_tool
 
+try:
+    from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+except ImportError:  # pragma: no cover - compatibility across deepagents versions
+    CompositeBackend = StateBackend = StoreBackend = None
+
+try:
+    from deepagents.middleware.filesystem import FilesystemMiddleware
+except ImportError:  # pragma: no cover - optional dependency fallback
+    FilesystemMiddleware = None
+
 from .config import AppConfig
 from .guardrails import build_pii_middleware
 from .langfuse_prompts import PROMPT_DEFINITIONS, render_prompt
@@ -33,6 +43,27 @@ from .utils import (
 
 logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
+
+
+def _build_filesystem_middleware() -> list[Any]:
+    if FilesystemMiddleware is None:
+        logger.warning(
+            "deepagents is not installed; FilesystemMiddleware is disabled. "
+            "Install deepagents to enable filesystem tools."
+        )
+        return []
+
+    if CompositeBackend and StateBackend and StoreBackend:
+        return [
+            FilesystemMiddleware(
+                backend=lambda rt: CompositeBackend(
+                    default=StateBackend(rt),
+                    routes={"/memories/": StoreBackend(rt)},
+                )
+            )
+        ]
+
+    return [FilesystemMiddleware()]
 
 
 def _has_tool_call(messages: List[Dict[str, Any]], tool_name: str) -> bool:
@@ -845,15 +876,16 @@ def build_router_agent(config: AppConfig, store, checkpointer, llm, tools):
     # in a single turn (for example, sales + inventory analysis) so LangGraph
     # can execute them concurrently when the model chooses to do so.
     parallel_router_llm = llm.bind(parallel_tool_calls=True)
+    middleware = _build_filesystem_middleware() + build_agent_middleware(
+        config,
+        include_todo=True,
+        include_pii=config.orchestrator_agent_pii_profile != "off",
+        pii_profile=config.orchestrator_agent_pii_profile,
+    )
     return create_agent(
         model=parallel_router_llm,
         tools=tools,
-        middleware=build_agent_middleware(
-            config,
-            include_todo=True,
-            include_pii=config.orchestrator_agent_pii_profile != "off",
-            pii_profile=config.orchestrator_agent_pii_profile,
-        ),
+        middleware=middleware,
         store=store,
         checkpointer=checkpointer,
     )
@@ -946,14 +978,16 @@ def build_dynamic_subagent_tool(
             create_search_memory_tool(namespace=("subagent", "{user_id}")),
         ]
 
+        middleware = _build_filesystem_middleware() + build_agent_middleware(
+            config,
+            include_pii=config.nested_agent_pii_profile != "off",
+            pii_profile=config.nested_agent_pii_profile,
+        )
+
         subagent = create_agent(
             model=llm,
             tools=selected_tools,
-            middleware=build_agent_middleware(
-                config,
-                include_pii=config.nested_agent_pii_profile != "off",
-                pii_profile=config.nested_agent_pii_profile,
-            ),
+            middleware=middleware,
             store=store,
             checkpointer=checkpointer,
         )
@@ -1027,14 +1061,15 @@ def build_dynamic_subagent_tool(
 
 
 def build_citation_tool(config: AppConfig, store, checkpointer, llm):
+    middleware = _build_filesystem_middleware() + build_agent_middleware(
+        config,
+        include_pii=config.nested_agent_pii_profile != "off",
+        pii_profile=config.nested_agent_pii_profile,
+    )
     citation_agent = create_agent(
         model=llm,
         tools=[],
-        middleware=build_agent_middleware(
-            config,
-            include_pii=config.nested_agent_pii_profile != "off",
-            pii_profile=config.nested_agent_pii_profile,
-        ),
+        middleware=middleware,
         store=store,
         checkpointer=checkpointer,
     )

@@ -17,6 +17,7 @@ dependencies = [
   "langchain-groq",
   "langgraph",
   "langmem",
+  "deepagents",
   "mcp",
   "pandas",
   "pydantic",

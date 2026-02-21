@@ -6,6 +6,7 @@ langchain-openai
 langchain-groq
 langgraph
 langmem
+deepagents
 langfuse
 mcp
 pandas
