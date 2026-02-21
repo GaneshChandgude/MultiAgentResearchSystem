@@ -97,9 +97,12 @@ Phases and expected outputs:
 
 8) Transform
    - Capture transform configuration (refactor engine version, project name, root package, target database, and legacy encoding)
+   - For code reforge, capture source project location (for example S3 zip path to a buildable source project) before execution
    - Select domains to transform and record skipped domains with rationale
+   - Support selective class-level scope updates so users can choose specific classes/files for reforge iterations
    - Refactor code into target implementation patterns
    - Reforge transformed code (quality hardening, style normalization, security checks, performance guardrails)
+   - Publish side-by-side original-vs-reforged code diffs and concise readability/maintainability deltas
    - Output: transformed code in destination repo + transformation_report.md + transform_artifact_manifest.json
 
 9) Agent-ready handoff packaging
@@ -264,3 +267,14 @@ Use the following captions as a ready-to-use narration track for screenshots 41 
 | 58 | Create-domain dialog captures domain metadata and allows marking seed files to steer grouping behavior. |
 | 59 | Actions menu centralizes domain operations such as create/edit/remove, import/export, and decomposition configuration updates. |
 | 60 | Completed decomposition summary confirms successful domain generation and leaves save/submit controls ready for workflow continuation. |
+
+## 8) Screenshot script (images 61-64)
+
+Use the following captions as a ready-to-use narration track for screenshots 61 through 64.
+
+| Image | Caption |
+| --- | --- |
+| 61 | Side-by-side reforge comparison highlights readability improvements by showing original and reforged Java implementations with the same logic decomposed into clearer helper methods. |
+| 62 | Job-plan guidance for Reforge confirms task completion and routes users to View Results, keeping context in chat while documenting what changed. |
+| 63 | Class-selection dialog for Reforge supports targeted scope by letting users check specific classes, track selected LOC totals, and update the run without reprocessing everything. |
+| 64 | Reforge setup requires a buildable source-project zip location (for example S3 path), ensuring refinement starts from compilable input before users continue. |
