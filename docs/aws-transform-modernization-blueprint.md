@@ -42,6 +42,8 @@ Execution contract:
 - Maintain a running modernization plan with status: NOT_STARTED | IN_PROGRESS | BLOCKED | COMPLETED.
 - After each phase, update a persistent handoff bundle so downstream phases can reuse already-discovered context.
 - Before executing any phase with configurable inputs, pause to validate and record phase-specific parameters (for example: scope, domain selection, engine/database settings, and output location).
+- For phases that require user confirmation, surface a concise checklist and wait for explicit confirmation before moving forward.
+- Keep guidance contextual: each response should include what was completed, what needs user input next, and the exact action to continue.
 
 Cross-phase context bundle (required):
 - Maintain `/artifacts/modernization_context_pack.json` as the single source of truth for reusable project context.
@@ -211,7 +213,34 @@ Practical conclusion:
 - If your GitHub MCP server is SSE-accessible and exposes tools over MCP, you can connect now using the existing registration flow.
 - If your GitHub MCP server is stdio-only (no SSE endpoint), you still need an SSE bridge/proxy layer.
 
-## 6) Screenshot script (images 21-40)
+## 6) Screenshot script (images 1-20)
+
+Use the following captions as a ready-to-use narration track for screenshots 1 through 20.
+
+| Image | Caption |
+| --- | --- |
+| 1 | Kick off by creating a mainframe modernization job from the workspace chat and selecting the modernization objective set. |
+| 2 | After objective selection, review the generated job specification and confirm by clicking **Create job**. |
+| 3 | The guided setup starts in **Kick off modernization**, prompting the user to add collaborators before execution proceeds. |
+| 4 | Once the job starts, the first walkthrough cue asks users to review **Analyze code** results in the job plan. |
+| 5 | In code analysis, **View by** helps users switch between file list, file type, and file folder perspectives. |
+| 6 | The **Codebase Issues** tab highlights blockers (for example missing CSD artifacts) before downstream phases. |
+| 7 | The analysis dashboard summarizes total LOC and file-type distribution to quickly assess modernization scope. |
+| 8 | After code analysis completes, users open **View data analysis results** directly from the job plan. |
+| 9 | Data lineage provides top-level interaction counts across datasets, DB2 objects, programs, and JCLs. |
+| 10 | The data-sets tab shows source stores and which programs read/write them, including access-mode visibility. |
+| 11 | The DB2 tab maps table usage and operation types to the calling COBOL programs. |
+| 12 | The Data Dictionary consolidates COBOL structures and DB2 entities for field-level discovery. |
+| 13 | COBOL data structure view exposes field metadata (types, levels, business meaning) for copybook interpretation. |
+| 14 | DB2 structure view lists columns, constraints, and data definitions to support schema understanding. |
+| 15 | Activity metrics onboarding introduces SMF analysis as a dedicated phase in the modernization sequence. |
+| 16 | Users provide the SMF zip location in S3 to enable batch activity profiling for the run. |
+| 17 | Activity analysis results summarize longest CPU, longest duration, and most-executed batch jobs. |
+| 18 | Users can ask contextual questions in chat (for example program functionality) while reviewing activity outputs. |
+| 19 | Documentation generation setup lets users choose detail level (Summary vs Detailed functional specifications). |
+| 20 | The final walkthrough step confirms SMF insights are stored in S3 and closes the first guidance sequence. |
+
+## 7) Screenshot script (images 21-40)
 
 Use the following captions as a ready-to-use narration track for screenshots 21 through 40.
 
@@ -238,7 +267,7 @@ Use the following captions as a ready-to-use narration track for screenshots 21 
 | 39 | Technical documentation review supports in-app PDF viewing, including high-level overview, purpose, and feature sections. |
 | 40 | Documentation results list generated files with status, and users can select an entry and open it in the viewer. |
 
-## 7) Screenshot script (images 41-60)
+## 8) Screenshot script (images 41-60)
 
 Use the following captions as a ready-to-use narration track for screenshots 41 through 60.
 
