@@ -151,6 +151,7 @@ class MCPToolsetClient:
         self.sse_url = _normalize_sse_url(base_url)
         self.headers = {str(key): str(value) for key, value in (headers or {}).items() if key and value}
         self._session_lock = threading.Lock()
+        self._connect_lock: asyncio.Lock | None = None
         self._session: Any | None = None
         self._session_stack: AsyncExitStack | None = None
         self._is_closed = False
@@ -207,9 +208,32 @@ class MCPToolsetClient:
             return self._session
         return await self._connect_session()
 
+    def _get_connect_lock(self) -> asyncio.Lock:
+        if self._connect_lock is None:
+            self._connect_lock = asyncio.Lock()
+        return self._connect_lock
+
     async def _connect_session(self) -> Any:
         if self._session is not None:
             return self._session
+        if self._is_closed:
+            raise RuntimeError(f"MCP toolset client for {self.base_url} is already closed.")
+
+        # Ensure only one coroutine creates and initializes the transport/session.
+        # Parallel connect attempts on the same Protocol instance can raise
+        # "Already connected to a transport" from the MCP SDK.
+        async with self._get_connect_lock():
+            if self._session is not None:
+                return self._session
+
+            # Explicitly close any stale transport before creating a new one.
+            # This mirrors the SDK guidance: call close() before reconnecting.
+            if self._session_stack is not None:
+                await self._close_session_unlocked()
+
+            return await self._open_session()
+
+    async def _open_session(self) -> Any:
         if self._is_closed:
             raise RuntimeError(f"MCP toolset client for {self.base_url} is already closed.")
 
@@ -232,6 +256,10 @@ class MCPToolsetClient:
         return session
 
     async def _close_session(self) -> None:
+        async with self._get_connect_lock():
+            await self._close_session_unlocked()
+
+    async def _close_session_unlocked(self) -> None:
         stack = self._session_stack
         self._session = None
         self._session_stack = None
