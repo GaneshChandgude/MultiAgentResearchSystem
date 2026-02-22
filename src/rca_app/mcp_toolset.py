@@ -78,10 +78,14 @@ def _get_runner() -> _AsyncioThreadRunner:
 
 
 def _run_coro(coro):
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
+    """Run all MCP coroutines on one dedicated loop.
+
+    MCP sessions and asyncio primitives (e.g. asyncio.Lock) are loop-bound.
+    Executing calls via ``asyncio.run`` creates a new loop per invocation,
+    which can cause reconnect churn and transport/protocol errors under
+    concurrent tool usage. Routing all calls through the shared runner keeps
+    session lifecycle and locking on a single event loop.
+    """
 
     return _get_runner().run(coro)
 
