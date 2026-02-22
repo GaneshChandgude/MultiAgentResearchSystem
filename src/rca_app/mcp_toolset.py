@@ -6,6 +6,7 @@ import logging
 import importlib.util
 import inspect
 import threading
+from contextlib import AsyncExitStack
 from typing import Any, Dict, Iterable, List
 
 from langchain_core.tools import StructuredTool
@@ -62,6 +63,8 @@ class _AsyncioThreadRunner:
 
 _runner_lock = threading.Lock()
 _runner: _AsyncioThreadRunner | None = None
+_clients_lock = threading.Lock()
+_clients: set["MCPToolsetClient"] = set()
 
 
 def _get_runner() -> _AsyncioThreadRunner:
@@ -85,6 +88,15 @@ def _run_coro(coro):
 
 def shutdown_mcp_runtime() -> None:
     global _runner
+    with _clients_lock:
+        clients = list(_clients)
+        _clients.clear()
+    for client in clients:
+        try:
+            client.close()
+        except Exception:  # pragma: no cover - defensive cleanup
+            logger.exception("Failed closing MCP toolset client for %s", client.base_url)
+
     with _runner_lock:
         if _runner is None:
             return
@@ -138,6 +150,21 @@ class MCPToolsetClient:
         self.base_url = base_url.rstrip("/")
         self.sse_url = _normalize_sse_url(base_url)
         self.headers = {str(key): str(value) for key, value in (headers or {}).items() if key and value}
+        self._session_lock = threading.Lock()
+        self._session: Any | None = None
+        self._session_stack: AsyncExitStack | None = None
+        self._is_closed = False
+        with _clients_lock:
+            _clients.add(self)
+
+    def close(self) -> None:
+        with self._session_lock:
+            if self._is_closed:
+                return
+            self._is_closed = True
+        _run_coro(self._close_session())
+        with _clients_lock:
+            _clients.discard(self)
 
     def list_tools(self) -> List[Any]:
         return _run_coro(self._list_tools())
@@ -146,36 +173,70 @@ class MCPToolsetClient:
         return _run_coro(self._call_tool(tool_name, arguments))
 
     async def _list_tools(self) -> List[Any]:
-        ClientSession, sse_client = _load_mcp_client()
-
-        sse_kwargs: Dict[str, Any] = {}
-        if self.headers and "headers" in inspect.signature(sse_client).parameters:
-            sse_kwargs["headers"] = self.headers
-
-        async with sse_client(self.sse_url, **sse_kwargs) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.list_tools()
+        try:
+            session = await self._get_session()
+            result = await session.list_tools()
+        except Exception:
+            logger.warning("Refreshing MCP session for %s after list_tools failure", self.base_url)
+            await self._close_session()
+            session = await self._connect_session()
+            result = await session.list_tools()
 
         if isinstance(result, dict):
             return result.get("tools", [])
         return getattr(result, "tools", result)
 
     async def _call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
-        ClientSession, sse_client = _load_mcp_client()
-
-        sse_kwargs: Dict[str, Any] = {}
-        if self.headers and "headers" in inspect.signature(sse_client).parameters:
-            sse_kwargs["headers"] = self.headers
-
-        async with sse_client(self.sse_url, **sse_kwargs) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool(tool_name, arguments)
+        try:
+            session = await self._get_session()
+            result = await session.call_tool(tool_name, arguments)
+        except Exception:
+            logger.warning(
+                "Refreshing MCP session for %s after call_tool failure (%s)", self.base_url, tool_name
+            )
+            await self._close_session()
+            session = await self._connect_session()
+            result = await session.call_tool(tool_name, arguments)
 
         if isinstance(result, dict) and "content" in result:
             return result["content"]
         return result
+
+    async def _get_session(self) -> Any:
+        if self._session is not None:
+            return self._session
+        return await self._connect_session()
+
+    async def _connect_session(self) -> Any:
+        if self._session is not None:
+            return self._session
+        if self._is_closed:
+            raise RuntimeError(f"MCP toolset client for {self.base_url} is already closed.")
+
+        ClientSession, sse_client = _load_mcp_client()
+        sse_kwargs: Dict[str, Any] = {}
+        if self.headers and "headers" in inspect.signature(sse_client).parameters:
+            sse_kwargs["headers"] = self.headers
+
+        stack = AsyncExitStack()
+        try:
+            read, write = await stack.enter_async_context(sse_client(self.sse_url, **sse_kwargs))
+            session = await stack.enter_async_context(ClientSession(read, write))
+            await session.initialize()
+        except Exception:
+            await stack.aclose()
+            raise
+
+        self._session_stack = stack
+        self._session = session
+        return session
+
+    async def _close_session(self) -> None:
+        stack = self._session_stack
+        self._session = None
+        self._session_stack = None
+        if stack is not None:
+            await stack.aclose()
 
 
 def _build_args_schema(tool_name: str, input_schema: Dict[str, Any]) -> type[BaseModel] | None:
