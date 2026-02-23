@@ -17,6 +17,62 @@ Typical follow-on errors include:
 - task-group cancellation / async scope errors
 - tools appearing registered but no longer usable
 
+Another common server-side crash signature is:
+
+```text
+Error: Already connected to a transport. Call close() before connecting to a new transport, or use a separate Protocol instance per connection.
+```
+
+This specific error usually means the gateway is attempting to attach the **same MCP protocol/server instance** to a new SSE transport after a disconnect.
+
+## Why `Already connected to a transport` happens
+
+In `supergateway` stdio↔SSE mode, each incoming SSE session must map to an MCP server/protocol instance that is not already bound to another active transport. If the previous transport was not fully closed (or the same object is reused across requests), the MCP SDK rejects the second `connect()` call with the error above.
+
+In short:
+
+- old SSE transport disconnected
+- gateway reused an already-bound protocol/server object
+- new SSE connection tried to call `connect()` again
+- SDK threw `Already connected to a transport`
+
+## Concrete fix (server/gateway side)
+
+Focus your changes where supergateway bridges SSE requests to the MCP protocol instance.
+
+1. **Use a fresh protocol/server object per SSE connection**
+   - safest approach when sessions are independent
+   - avoids cross-session transport reuse
+2. **OR ensure explicit close before reconnecting**
+   - on SSE close/error, always call `await protocol.close()` (or equivalent)
+   - clear references before handling the next connection
+3. **Guard connect path**
+   - serialize connect/close transitions (mutex/lock) to avoid race conditions
+   - reject/queue a reconnect if close is still in progress
+
+Pseudo-pattern:
+
+```ts
+// per incoming SSE request/session
+const protocol = createProtocol(); // preferred: new instance per session
+
+try {
+  await protocol.connect(transport);
+  // ... session lifecycle ...
+} finally {
+  await protocol.close();
+}
+```
+
+If you keep a shared protocol instance, do this defensively:
+
+```ts
+if (protocolIsConnected) {
+  await protocol.close();
+}
+await protocol.connect(nextTransport);
+```
+
 ## Can I create a new client when this appears?
 
 Yes — **that is the recommended immediate action**.
@@ -33,7 +89,7 @@ Recommended order:
 
 1. Stop the current MCP client/host.
 2. Start a new client session.
-3. If disconnects continue, restart the GitHub MCP server/supergateway as well.
+3. If disconnects continue, restart the GitHub MCP server/supergateway as well (to clear stale transport bindings).
 4. Retry the same tool call only after the new session is confirmed healthy.
 
 > Note: The RCA app client now includes automatic reconnect/retry logic for common
@@ -60,6 +116,7 @@ Recommended order:
 - If you use reverse proxies (nginx, cloudflared, corporate gateways), increase idle/read timeouts for long-lived SSE streams.
 - Keep one active client per server session when possible to avoid session contention.
 - Enable debug logs on both MCP host and server to correlate disconnect time with failing tool requests.
+- If you maintain the gateway code, add explicit `close()` logs around disconnect events so you can verify transport teardown completed before the next `connect()`.
 
 ## Minimal diagnostics to capture
 
