@@ -165,6 +165,29 @@ def _tool_field(tool_info: Any, field: str, fallback: str | None = None) -> Any:
     return getattr(tool_info, field, None) or (getattr(tool_info, fallback, None) if fallback else None)
 
 
+def _extract_mcp_error_text(result: Any) -> str | None:
+    if not isinstance(result, dict) or not result.get("isError"):
+        return None
+
+    content = result.get("content")
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+
+    if isinstance(content, list):
+        messages: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text")
+            else:
+                text = getattr(item, "text", None)
+            if isinstance(text, str) and text.strip():
+                messages.append(text.strip())
+        if messages:
+            return "\n".join(messages)
+
+    return "MCP tool returned isError=True with no readable error message."
+
+
 class MCPToolsetClient:
     def __init__(self, base_url: str, headers: Dict[str, str] | None = None) -> None:
         self.base_url = base_url.rstrip("/")
@@ -210,6 +233,10 @@ class MCPToolsetClient:
             tool_name=tool_name,
             call=lambda session: session.call_tool(tool_name, arguments),
         )
+
+        error_text = _extract_mcp_error_text(result)
+        if error_text is not None:
+            raise ValueError(error_text)
 
         if isinstance(result, dict) and "content" in result:
             return result["content"]
@@ -265,9 +292,37 @@ class MCPToolsetClient:
             )
 
     async def _get_session(self) -> Any:
-        if self._session is not None:
+        if self._session is not None and self._session_is_active(self._session):
             return self._session
+        if self._session is not None:
+            await self._close_session()
         return await self._connect_session()
+
+    def _session_is_active(self, session: Any) -> bool:
+        closed_indicators = (
+            getattr(session, "closed", None),
+            getattr(session, "is_closed", None),
+            getattr(session, "_closed", None),
+        )
+        for value in closed_indicators:
+            if isinstance(value, bool):
+                return not value
+            if callable(value):
+                try:
+                    closed = value()
+                except Exception:
+                    continue
+                if isinstance(closed, bool):
+                    return not closed
+
+        close_event = getattr(session, "_closed_event", None)
+        if close_event is not None and hasattr(close_event, "is_set"):
+            try:
+                return not bool(close_event.is_set())
+            except Exception:
+                return True
+
+        return True
 
     def _get_connect_lock(self) -> asyncio.Lock:
         if self._connect_lock is None:
