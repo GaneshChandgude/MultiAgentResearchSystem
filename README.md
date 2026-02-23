@@ -380,6 +380,14 @@ rca-app sync-langfuse-prompts
 - **Hypothesis Validation Agent** – Cross-validates evidence
 - **Router / Orchestration Agent** – Controls investigation flow
 
+### Modernization specialist phase agents
+
+The orchestrator now exposes configurable modernization phase tools:
+- `list_modernization_phase_agents` to discover phase-specific agents and required parameters
+- `run_modernization_phase_agent` to execute predefined specialists (Kickoff, Code/Data Analysis, Activity Metrics, Documentation, Business Logic Extraction, Decomposition, Migration Planning, Test Planning/Data/Automation, Refactor, Reforge, and Modernization QA)
+
+Each phase agent validates required parameters before execution, returns `BLOCKED` with `missing_inputs` when configuration is incomplete, and delegates execution through the existing dynamic `run_subagent` flow so orchestration can compose phase runs consistently.
+
 ### Memory design
 
 The system uses LangMem to persist investigation findings:

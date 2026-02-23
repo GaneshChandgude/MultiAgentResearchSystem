@@ -57,6 +57,9 @@ CORE RESPONSIBILITIES:
     is available.
   - Use `run_subagent` to assign focused tasks, and pass only the exact tool names
     that each worker needs.
+  - If modernization phase tools are available (`list_modernization_phase_agents`,
+    `run_modernization_phase_agent`), prefer them over ad-hoc delegation for
+    kickoff/analyze/document/decompose/migrate/test/transform/reforge workflows.
   - Each subagent instruction must include:
     • objective
     • clear task boundaries

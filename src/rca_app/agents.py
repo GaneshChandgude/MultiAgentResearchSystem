@@ -28,6 +28,12 @@ from .memory import (
     build_memory_augmented_prompt,
     persist_agent_trace,
 )
+from .modernization_agents import (
+    MODERNIZATION_AGENT_SPECS,
+    build_modernization_subagent_task,
+    list_modernization_agent_specs,
+    validate_phase_parameters,
+)
 from .observability import build_langfuse_invoke_config
 from .toolset_registry import ToolsetRegistry
 from .toolsets import build_user_mcp_toolsets
@@ -1251,6 +1257,65 @@ def build_agents(config: AppConfig, store, checkpointer):
     citation_tool = build_citation_tool(config, store, checkpointer, specialist_llm)
 
     @tool
+    def list_modernization_phase_agents() -> Dict[str, Any]:
+        """List predefined modernization specialist agents and their configurable parameters."""
+        return {"modernization_agents": list_modernization_agent_specs()}
+
+    @tool
+    def run_modernization_phase_agent(
+        phase_id: str,
+        parameters: Dict[str, Any],
+        user_id: str,
+        query_id: str,
+        tool_names: Optional[List[str]] = None,
+        output_schema: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Run a predefined modernization specialist phase agent with configurable parameters."""
+        normalized_phase_id = phase_id.strip().lower()
+        if normalized_phase_id not in MODERNIZATION_AGENT_SPECS:
+            return {
+                "status": "BLOCKED",
+                "phase_id": normalized_phase_id,
+                "missing_inputs": ["phase_id"],
+                "notes": (
+                    "Unknown phase_id. Use list_modernization_phase_agents for supported values."
+                ),
+            }
+
+        phase_spec = MODERNIZATION_AGENT_SPECS[normalized_phase_id]
+        missing_inputs = validate_phase_parameters(normalized_phase_id, parameters or {})
+        if missing_inputs:
+            return {
+                "status": "BLOCKED",
+                "phase_id": normalized_phase_id,
+                "agent_name": phase_spec.agent_name,
+                "missing_inputs": missing_inputs,
+                "provided_parameters": parameters or {},
+            }
+
+        delegated_output_schema = output_schema or phase_spec.default_output_schema
+        delegated_task = build_modernization_subagent_task(normalized_phase_id, parameters or {})
+
+        delegated_result = subagent_tool.invoke(
+            {
+                "objective": f"Execute modernization phase: {phase_spec.agent_name}",
+                "task": delegated_task,
+                "user_id": user_id,
+                "query_id": query_id,
+                "output_schema": delegated_output_schema,
+                "tool_names": tool_names,
+            }
+        )
+
+        return {
+            "phase_id": normalized_phase_id,
+            "agent_name": phase_spec.agent_name,
+            "required_parameters": phase_spec.required_parameters,
+            "optional_parameters": phase_spec.optional_parameters,
+            "result": delegated_result,
+        }
+
+    @tool
     def force_todo_update(reason: str) -> str:
         """Call after tools to update todos."""
         return f"force_todo_update triggered: {reason}"
@@ -1263,6 +1328,8 @@ def build_agents(config: AppConfig, store, checkpointer):
     dynamic_tools = [
         subagent_tool,
         citation_tool,
+        list_modernization_phase_agents,
+        run_modernization_phase_agent,
         *tool_registry.all_tools(),
     ]
     router_tools = [*shared_router_tools, *dynamic_tools]
@@ -1279,5 +1346,7 @@ def build_agents(config: AppConfig, store, checkpointer):
         "tools": {
             "run_subagent": subagent_tool,
             "citation": citation_tool,
+            "list_modernization_phase_agents": list_modernization_phase_agents,
+            "run_modernization_phase_agent": run_modernization_phase_agent,
         },
     }
