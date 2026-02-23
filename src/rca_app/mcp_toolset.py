@@ -227,7 +227,7 @@ class MCPToolsetClient:
                 return await call(session)
             except Exception as error:
                 last_error = error
-                retryable = _is_recoverable_mcp_error(error) or attempt < max_attempts
+                retryable = _is_recoverable_mcp_error(error)
                 context = f" ({tool_name})" if tool_name else ""
                 logger.warning(
                     "MCP %s failed for %s%s (attempt %d/%d): %s",
@@ -243,7 +243,7 @@ class MCPToolsetClient:
                     raise
 
                 # Treat current session as stale after transport/protocol failures.
-                await self._close_session()
+                await self._reset_session_for_retry(error)
                 await self._connect_session()
                 # Small delay avoids reconnect thrash after abrupt server-side close.
                 await asyncio.sleep(min(0.25 * attempt, 0.75))
@@ -251,6 +251,18 @@ class MCPToolsetClient:
         if last_error is not None:
             raise last_error
         raise RuntimeError(f"Unknown MCP {operation} failure for {self.base_url}")
+
+
+    async def _reset_session_for_retry(self, cause: Exception) -> None:
+        try:
+            await self._close_session()
+        except Exception as close_error:  # pragma: no cover - defensive recovery
+            logger.warning(
+                "Ignoring MCP session close failure during retry for %s after %s: %s",
+                self.base_url,
+                cause,
+                close_error,
+            )
 
     async def _get_session(self) -> Any:
         if self._session is not None:
