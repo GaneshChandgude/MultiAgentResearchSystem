@@ -9,6 +9,11 @@ import threading
 from contextlib import AsyncExitStack
 from typing import Any, Dict, Iterable, List
 
+try:
+    from anyio import ClosedResourceError
+except Exception:  # pragma: no cover - optional dependency guard
+    ClosedResourceError = None  # type: ignore[assignment]
+
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, create_model
 
@@ -32,6 +37,12 @@ _RECOVERABLE_MCP_ERROR_MARKERS = (
 def _is_recoverable_mcp_error(error: Exception) -> bool:
     message = str(error).lower()
     return any(marker in message for marker in _RECOVERABLE_MCP_ERROR_MARKERS)
+
+
+def _is_closed_resource_error(error: Exception) -> bool:
+    if ClosedResourceError is not None and isinstance(error, ClosedResourceError):
+        return True
+    return error.__class__.__name__ == "ClosedResourceError"
 
 
 def _normalize_sse_url(base_url: str) -> str:
@@ -280,7 +291,8 @@ class MCPToolsetClient:
                 return await call(session)
             except Exception as error:
                 last_error = error
-                retryable = _is_recoverable_mcp_error(error)
+                closed_resource_error = _is_closed_resource_error(error)
+                retryable = closed_resource_error or _is_recoverable_mcp_error(error)
                 context = f" ({tool_name})" if tool_name else ""
                 logger.warning(
                     "MCP %s failed for %s%s (attempt %d/%d): %s",
@@ -358,8 +370,10 @@ class MCPToolsetClient:
         return self._connect_lock
 
     async def _connect_session(self) -> Any:
-        if self._session is not None:
+        if self._session is not None and self._session_is_active(self._session):
             return self._session
+        if self._session is not None:
+            await self._close_session()
         if self._is_closed:
             raise RuntimeError(f"MCP toolset client for {self.base_url} is already closed.")
 
