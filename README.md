@@ -243,6 +243,8 @@ Further reading on product/LLM evaluation practices:
 
 ## Troubleshooting
 
+- For GitHub MCP `SSE connection closed` / tool-call instability, see [`docs/github-mcp-troubleshooting.md`](docs/github-mcp-troubleshooting.md).
+
 ### `[SSL: CERTIFICATE_VERIFY_FAILED]` when connecting to GitHub
 
 If you see errors such as:

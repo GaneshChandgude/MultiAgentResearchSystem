@@ -17,6 +17,22 @@ from .toolset_registry import Toolset
 logger = logging.getLogger(__name__)
 logger.debug("Loaded module %s", __name__)
 
+_RECOVERABLE_MCP_ERROR_MARKERS = (
+    "client disconnected",
+    "sse connection closed",
+    "connection closed",
+    "broken pipe",
+    "connection reset",
+    "server disconnected",
+    "already connected to a transport",
+    "attempted to exit cancel scope in a different task",
+)
+
+
+def _is_recoverable_mcp_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return any(marker in message for marker in _RECOVERABLE_MCP_ERROR_MARKERS)
+
 
 def _normalize_sse_url(base_url: str) -> str:
     url = base_url.rstrip("/")
@@ -178,34 +194,63 @@ class MCPToolsetClient:
         return _run_coro(self._call_tool(tool_name, arguments))
 
     async def _list_tools(self) -> List[Any]:
-        try:
-            session = await self._get_session()
-            result = await session.list_tools()
-        except Exception:
-            logger.warning("Refreshing MCP session for %s after list_tools failure", self.base_url)
-            await self._close_session()
-            session = await self._connect_session()
-            result = await session.list_tools()
+        result = await self._invoke_with_reconnect(
+            operation="list_tools",
+            tool_name=None,
+            call=lambda session: session.list_tools(),
+        )
 
         if isinstance(result, dict):
             return result.get("tools", [])
         return getattr(result, "tools", result)
 
     async def _call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
-        try:
-            session = await self._get_session()
-            result = await session.call_tool(tool_name, arguments)
-        except Exception:
-            logger.warning(
-                "Refreshing MCP session for %s after call_tool failure (%s)", self.base_url, tool_name
-            )
-            await self._close_session()
-            session = await self._connect_session()
-            result = await session.call_tool(tool_name, arguments)
+        result = await self._invoke_with_reconnect(
+            operation="call_tool",
+            tool_name=tool_name,
+            call=lambda session: session.call_tool(tool_name, arguments),
+        )
 
         if isinstance(result, dict) and "content" in result:
             return result["content"]
         return result
+
+    async def _invoke_with_reconnect(self, operation: str, tool_name: str | None, call: Any) -> Any:
+        # First execution + 2 reconnect attempts. This is enough to recover from
+        # transient SSE disconnects while avoiding endless retry loops.
+        max_attempts = 3
+        last_error: Exception | None = None
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                session = await self._get_session()
+                return await call(session)
+            except Exception as error:
+                last_error = error
+                retryable = _is_recoverable_mcp_error(error) or attempt < max_attempts
+                context = f" ({tool_name})" if tool_name else ""
+                logger.warning(
+                    "MCP %s failed for %s%s (attempt %d/%d): %s",
+                    operation,
+                    self.base_url,
+                    context,
+                    attempt,
+                    max_attempts,
+                    error,
+                )
+
+                if not retryable or attempt == max_attempts:
+                    raise
+
+                # Treat current session as stale after transport/protocol failures.
+                await self._close_session()
+                await self._connect_session()
+                # Small delay avoids reconnect thrash after abrupt server-side close.
+                await asyncio.sleep(min(0.25 * attempt, 0.75))
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError(f"Unknown MCP {operation} failure for {self.base_url}")
 
     async def _get_session(self) -> Any:
         if self._session is not None:
