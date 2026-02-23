@@ -103,3 +103,56 @@ def test_invoke_with_reconnect_recovers_when_close_fails(monkeypatch):
     assert calls["count"] == 2
     assert calls["connect"] == 1
     _cleanup_client(client)
+
+
+def test_call_tool_raises_when_mcp_result_is_error_payload():
+    client = MCPToolsetClient("http://localhost:9999")
+
+    async def fake_invoke_with_reconnect(**_kwargs):
+        return {
+            "isError": True,
+            "content": [
+                {
+                    "type": "text",
+                    "text": "parameter sort is not of type string, is <nil>",
+                }
+            ],
+        }
+
+    client._invoke_with_reconnect = fake_invoke_with_reconnect  # type: ignore[assignment]
+
+    with pytest.raises(ValueError, match="parameter sort is not of type string"):
+        asyncio.run(client._call_tool("list_repositories", {}))
+
+    _cleanup_client(client)
+
+
+def test_get_session_reconnects_when_cached_session_is_marked_closed():
+    client = MCPToolsetClient("http://localhost:9999")
+
+    class StaleSession:
+        closed = True
+
+    stale_session = StaleSession()
+    fresh_session = object()
+    calls = {"close": 0, "connect": 0}
+
+    async def fake_close():
+        calls["close"] += 1
+        client._session = None
+
+    async def fake_connect():
+        calls["connect"] += 1
+        client._session = fresh_session
+        return fresh_session
+
+    client._session = stale_session
+    client._close_session = fake_close  # type: ignore[assignment]
+    client._connect_session = fake_connect  # type: ignore[assignment]
+
+    session = asyncio.run(client._get_session())
+
+    assert session is fresh_session
+    assert calls["close"] == 1
+    assert calls["connect"] == 1
+    _cleanup_client(client)
