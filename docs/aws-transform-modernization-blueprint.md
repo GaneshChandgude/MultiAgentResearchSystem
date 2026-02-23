@@ -1,6 +1,6 @@
-# AWS Transform-style Mainframe Modernization Blueprint
+# Cloud-agnostic Mainframe Modernization Blueprint
 
-This blueprint adapts your existing orchestrator + sub-agent framework into an AWS Transform-like workflow.
+This blueprint adapts your existing orchestrator + sub-agent framework into a cloud modernization workflow.
 
 ## 1) Observed workflow from your uploaded UI flow
 
@@ -99,7 +99,7 @@ Phases and expected outputs:
 
 8) Transform
    - Capture transform configuration (refactor engine version, project name, root package, target database, and legacy encoding)
-   - For code reforge, capture source project location (for example S3 zip path to a buildable source project) before execution
+   - For code reforge, capture source project location (for example an object-storage zip URI/path to a buildable source project) before execution
    - Select domains to transform and record skipped domains with rationale
    - Support selective class-level scope updates so users can choose specific classes/files for reforge iterations
    - Refactor code into target implementation patterns
@@ -237,11 +237,11 @@ Use the following captions as a ready-to-use narration track for screenshots 1 t
 | 13 | COBOL data structure view exposes field metadata (types, levels, business meaning) for copybook interpretation. |
 | 14 | DB2 structure view lists columns, constraints, and data definitions to support schema understanding. |
 | 15 | Activity metrics onboarding introduces SMF analysis as a dedicated phase in the modernization sequence. |
-| 16 | Users provide the SMF zip location in S3 to enable batch activity profiling for the run. |
+| 16 | Users provide the SMF zip location in object storage to enable batch activity profiling for the run. |
 | 17 | Activity analysis results summarize longest CPU, longest duration, and most-executed batch jobs. |
 | 18 | Users can ask contextual questions in chat (for example program functionality) while reviewing activity outputs. |
 | 19 | Documentation generation setup lets users choose detail level (Summary vs Detailed functional specifications). |
-| 20 | The final walkthrough step confirms SMF insights are stored in S3 and closes the first guidance sequence. |
+| 20 | The final walkthrough step confirms SMF insights are stored in object storage and closes the first guidance sequence. |
 
 ## 7) Screenshot script (images 21-40)
 
@@ -277,7 +277,7 @@ Use the following captions as a ready-to-use narration track for screenshots 41 
 | Image | Caption |
 | --- | --- |
 | 41 | Refactor-code guidance appears directly in the job plan, prompting users to configure transform inputs before generation. |
-| 42 | Refactor output view shows the generated artifact path in S3 and domain-level transform/generate completion states. |
+| 42 | Refactor output view shows the generated artifact path in object storage and domain-level transform/generate completion states. |
 | 43 | Domain selection for refactoring lets users pick modernization scope and proceed with Submit once domains are chosen. |
 | 44 | The domain selection screen keeps status, sequence, and file counts visible so users can validate refactor scope before submission. |
 | 45 | Configure transformation captures engine version, project naming, target database, and legacy encoding settings in one form. |
@@ -306,4 +306,4 @@ Use the following captions as a ready-to-use narration track for screenshots 61 
 | 61 | Side-by-side reforge comparison highlights readability improvements by showing original and reforged Java implementations with the same logic decomposed into clearer helper methods. |
 | 62 | Job-plan guidance for Reforge confirms task completion and routes users to View Results, keeping context in chat while documenting what changed. |
 | 63 | Class-selection dialog for Reforge supports targeted scope by letting users check specific classes, track selected LOC totals, and update the run without reprocessing everything. |
-| 64 | Reforge setup requires a buildable source-project zip location (for example S3 path), ensuring refinement starts from compilable input before users continue. |
+| 64 | Reforge setup requires a buildable source-project zip location (for example an object-storage path), ensuring refinement starts from compilable input before users continue. |
