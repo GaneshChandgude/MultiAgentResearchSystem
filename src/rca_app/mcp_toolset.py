@@ -81,6 +81,8 @@ _runner_lock = threading.Lock()
 _runner: _AsyncioThreadRunner | None = None
 _clients_lock = threading.Lock()
 _clients: set["MCPToolsetClient"] = set()
+_client_cache_lock = threading.Lock()
+_client_cache: dict[tuple[str, tuple[tuple[str, str], ...]], "MCPToolsetClient"] = {}
 
 
 def _get_runner() -> _AsyncioThreadRunner:
@@ -122,6 +124,26 @@ def shutdown_mcp_runtime() -> None:
             return
         _runner.close()
         _runner = None
+
+    with _client_cache_lock:
+        _client_cache.clear()
+
+
+def _client_cache_key(base_url: str, headers: Dict[str, str] | None = None) -> tuple[str, tuple[tuple[str, str], ...]]:
+    normalized_url = base_url.rstrip("/")
+    normalized_headers = tuple(sorted((str(key), str(value)) for key, value in (headers or {}).items() if key and value))
+    return normalized_url, normalized_headers
+
+
+def get_mcp_client(base_url: str, headers: Dict[str, str] | None = None) -> "MCPToolsetClient":
+    key = _client_cache_key(base_url, headers)
+    with _client_cache_lock:
+        cached = _client_cache.get(key)
+        if cached is not None and not cached._is_closed:
+            return cached
+        client = MCPToolsetClient(base_url, headers=headers)
+        _client_cache[key] = client
+        return client
 
 
 def _load_mcp_client() -> tuple[Any, Any]:
@@ -207,6 +229,10 @@ class MCPToolsetClient:
                 return
             self._is_closed = True
         _run_coro(self._close_session())
+        with _client_cache_lock:
+            stale_keys = [key for key, cached_client in _client_cache.items() if cached_client is self]
+            for key in stale_keys:
+                _client_cache.pop(key, None)
         with _clients_lock:
             _clients.discard(self)
 
@@ -266,11 +292,13 @@ class MCPToolsetClient:
                     error,
                 )
 
-                if not retryable or attempt == max_attempts:
+                if not retryable:
                     raise
 
                 # Treat current session as stale after transport/protocol failures.
                 await self._reset_session_for_retry(error)
+                if attempt == max_attempts:
+                    raise
                 await self._connect_session()
                 # Small delay avoids reconnect thrash after abrupt server-side close.
                 await asyncio.sleep(min(0.25 * attempt, 0.75))
@@ -416,7 +444,7 @@ def _build_tool(client: MCPToolsetClient, tool_info: Any) -> StructuredTool:
 
 
 def build_mcp_toolset(name: str, description: str, base_url: str, headers: Dict[str, str] | None = None) -> Toolset:
-    client = MCPToolsetClient(base_url, headers=headers)
+    client = get_mcp_client(base_url, headers=headers)
     tools = []
     for tool_info in client.list_tools():
         tool_name = _tool_field(tool_info, "name") or "unknown"

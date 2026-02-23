@@ -45,6 +45,10 @@ from rca_app.mcp_toolset import MCPToolsetClient
 
 def _cleanup_client(client: MCPToolsetClient) -> None:
     client._is_closed = True
+    with mcp_toolset._client_cache_lock:
+        stale_keys = [key for key, cached_client in mcp_toolset._client_cache.items() if cached_client is client]
+        for key in stale_keys:
+            mcp_toolset._client_cache.pop(key, None)
     with mcp_toolset._clients_lock:
         mcp_toolset._clients.discard(client)
 
@@ -155,4 +159,48 @@ def test_get_session_reconnects_when_cached_session_is_marked_closed():
     assert session is fresh_session
     assert calls["close"] == 1
     assert calls["connect"] == 1
+    _cleanup_client(client)
+
+
+def test_get_mcp_client_reuses_same_instance_for_same_config():
+    first = mcp_toolset.get_mcp_client("http://localhost:9999", headers={"Authorization": "Bearer abc"})
+    second = mcp_toolset.get_mcp_client("http://localhost:9999/", headers={"Authorization": "Bearer abc"})
+
+    assert first is second
+
+    _cleanup_client(first)
+
+
+def test_invoke_with_reconnect_closes_session_before_final_retryable_raise(monkeypatch):
+    client = MCPToolsetClient("http://localhost:9999")
+    calls = {"count": 0, "close": 0, "connect": 0}
+
+    async def fake_get_session():
+        return object()
+
+    async def always_retryable_fail(_session):
+        calls["count"] += 1
+        raise RuntimeError("client disconnected")
+
+    async def fake_close():
+        calls["close"] += 1
+
+    async def fake_connect():
+        calls["connect"] += 1
+        return object()
+
+    async def fake_sleep(_seconds):
+        return None
+
+    client._get_session = fake_get_session  # type: ignore[assignment]
+    client._close_session = fake_close  # type: ignore[assignment]
+    client._connect_session = fake_connect  # type: ignore[assignment]
+
+    monkeypatch.setattr(mcp_toolset.asyncio, "sleep", fake_sleep)
+    with pytest.raises(RuntimeError, match="client disconnected"):
+        asyncio.run(client._invoke_with_reconnect("call_tool", "get_me", always_retryable_fail))
+
+    assert calls["count"] == 3
+    assert calls["close"] == 3
+    assert calls["connect"] == 2
     _cleanup_client(client)
