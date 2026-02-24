@@ -200,6 +200,59 @@ npm run dev
 
 3. Open `http://localhost:5173` to access the RCA command center.
 
+### Register LLM and backend connections from the UI/API
+
+The configuration wizard in the UI already exposes fields to register:
+
+- LLM connection (`LLM Configuration` step)
+- Embeddings backend (`Embedder Setup` step)
+- External MCP backends (`MCP Server Registry` step)
+
+Under the hood, each step maps to a backend endpoint:
+
+- `POST /api/config/llm`
+- `POST /api/config/embedder`
+- `POST /api/config/mcp_servers`
+
+Example requests (same payload shape used by the UI):
+
+```bash
+curl -X POST http://localhost:8000/api/config/llm \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "<user-id>",
+    "azure_openai_endpoint": "https://your-resource.openai.azure.com",
+    "azure_openai_api_key": "<api-key>",
+    "azure_openai_deployment": "gpt-4.1-mini",
+    "planning_azure_openai_deployment": "gpt-4.1",
+    "specialist_azure_openai_deployment": "gpt-4.1-mini",
+    "azure_openai_api_version": "2024-12-01-preview"
+  }'
+
+curl -X POST http://localhost:8000/api/config/mcp_servers \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "<user-id>",
+    "servers": [
+      {
+        "name": "salesforce",
+        "base_url": "http://localhost:8600",
+        "description": "Sales transactions toolset",
+        "enabled": true
+      },
+      {
+        "name": "sap",
+        "base_url": "http://localhost:8700",
+        "description": "Inventory transactions toolset",
+        "enabled": true
+      }
+    ]
+  }'
+```
+
+When a chat starts, the backend merges user-scoped config and builds the app with
+those LLM and MCP server settings.
+
 You can also run directly with Python:
 
 ```bash
