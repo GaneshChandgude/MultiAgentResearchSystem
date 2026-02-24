@@ -7,6 +7,26 @@ This guide covers the common failure mode where GitHub MCP tool calls start fail
 [supergateway] Client disconnected (session <id>)
 ```
 
+## Important update (supergateway v3.1.0)
+
+Issue [supercorp-ai/supergateway#67](https://github.com/supercorp-ai/supergateway/issues/67)
+was fixed in **supergateway v3.1.0**.
+
+`v3.1.0` now correctly forwards the Stdio MCP client protocol version to the
+upstream SSE MCP server, which fixes the protocol/version mismatch class of
+failures.
+
+If you are still seeing version mismatch errors, first verify your gateway
+version and upgrade:
+
+```bash
+supergateway --version
+```
+
+- If `< 3.1.0`: upgrade supergateway and retest.
+- If `>= 3.1.0`: continue with the diagnostics below, because the issue may now
+  be transport/session lifecycle related instead of protocol version forwarding.
+
 ## What this means
 
 Those lines indicate the Server-Sent Events (SSE) stream between the MCP client and the supergateway was dropped. After that, tool calls can fail because the client session state is gone or stale.
@@ -26,6 +46,10 @@ Error: Already connected to a transport. Call close() before connecting to a new
 This specific error usually means the gateway is attempting to attach the **same MCP protocol/server instance** to a new SSE transport after a disconnect.
 
 ## Why `Already connected to a transport` happens
+
+> Applies mainly to older gateway behavior or custom gateway implementations.
+> For protocol version mismatch errors specifically, upgrade to supergateway
+> `v3.1.0+` first.
 
 In `supergateway` stdio↔SSE mode, each incoming SSE session must map to an MCP server/protocol instance that is not already bound to another active transport. If the previous transport was not fully closed (or the same object is reused across requests), the MCP SDK rejects the second `connect()` call with the error above.
 
